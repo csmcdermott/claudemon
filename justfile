@@ -1,11 +1,13 @@
+venv := ".venv/bin"
+
 lint:
-	ruff check claudemon/ tests/
+	{{venv}}/ruff check claudemon/ tests/
 
 test:
-	pytest tests/ -v
+	{{venv}}/pytest tests/ -v
 
 coverage:
-	pytest tests/ --cov=claudemon --cov-report=term-missing --cov-fail-under=80
+	{{venv}}/pytest tests/ --cov=claudemon --cov-report=term-missing --cov-fail-under=80
 
 install-pre-push:
 	cp scripts/pre-push.sh .git/hooks/pre-push
