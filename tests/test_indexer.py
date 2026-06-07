@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import claudemon.db as db
 import claudemon.indexer as indexer
 from tests.conftest import FIXTURES_DIR
@@ -173,3 +175,80 @@ def test_tool_use_result_not_a_new_query(conn, tmp_path):
         "SELECT DISTINCT query_id FROM messages WHERE session_id='t1'"
     ).fetchall()}
     assert len(queries) == 1  # tool_use result is not a new query; both assistant msgs share query
+
+
+def test_index_file_nonexistent(conn):
+    indexer.index_file(conn, Path("/tmp/nonexistent_abc.jsonl"), task_gap_minutes=30)
+    count = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
+    assert count == 0
+
+
+def test_index_file_malformed_json(conn, tmp_path):
+    jsonl = tmp_path / "bad.jsonl"
+    jsonl.write_text(
+        'not json\n'
+        '{"type":"user","message":{"role":"user","content":[{"type":"text","text":"hi"}]},'
+        '"timestamp":"2026-06-01T10:00:00.000Z","sessionId":"m1","uuid":"u1",'
+        '"parentUuid":null,"cwd":"/p","gitBranch":"main","isSidechain":false,'
+        '"isMeta":false,"entrypoint":"cli","userType":"external","version":"2.1.0"}\n'
+        '{"type":"assistant","message":{"model":"claude-sonnet-4-6","usage":{'
+        '"input_tokens":5,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,'
+        '"output_tokens":10},"stop_reason":"end_turn","content":[]},'
+        '"timestamp":"2026-06-01T10:00:05.000Z","sessionId":"m1","uuid":"a1",'
+        '"parentUuid":"u1","cwd":"/p","gitBranch":"main","isSidechain":false,'
+        '"entrypoint":"cli","userType":"external","version":"2.1.0"}\n'
+    )
+    indexer.index_file(conn, jsonl, task_gap_minutes=30)
+    # Malformed line skipped; valid assistant still indexed
+    count = conn.execute("SELECT COUNT(*) FROM messages WHERE session_id='m1'").fetchone()[0]
+    assert count == 1
+
+
+def test_is_clear_command_string_content():
+    record = {"message": {"content": "/clear"}}
+    assert indexer._is_clear_command(record)
+
+
+def test_is_clear_command_non_string_non_list_content():
+    record = {"message": {"content": 42}}
+    assert not indexer._is_clear_command(record)
+
+
+def test_index_file_assistant_no_timestamp(conn, tmp_path):
+    jsonl = tmp_path / "no_ts.jsonl"
+    jsonl.write_text(
+        '{"type":"user","message":{"role":"user","content":[{"type":"text","text":"hi"}]},'
+        '"timestamp":"2026-06-01T10:00:00.000Z","sessionId":"n1","uuid":"u1",'
+        '"parentUuid":null,"cwd":"/p","gitBranch":"main","isSidechain":false,'
+        '"isMeta":false,"entrypoint":"cli","userType":"external","version":"2.1.0"}\n'
+        '{"type":"assistant","message":{"model":"claude-sonnet-4-6","usage":{'
+        '"input_tokens":5,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,'
+        '"output_tokens":10},"stop_reason":"end_turn","content":[]},'
+        '"sessionId":"n1","uuid":"a1","parentUuid":"u1","cwd":"/p","gitBranch":"main",'
+        '"isSidechain":false,"entrypoint":"cli","userType":"external","version":"2.1.0"}\n'
+    )
+    # No timestamp on assistant — should be skipped, no crash
+    indexer.index_file(conn, jsonl, task_gap_minutes=30)
+    count = conn.execute("SELECT COUNT(*) FROM messages WHERE session_id='n1'").fetchone()[0]
+    assert count == 0
+
+
+def test_index_all(conn, tmp_path):
+    project_dir = tmp_path / "proj"
+    project_dir.mkdir()
+    jsonl = project_dir / "sess1.jsonl"
+    jsonl.write_text(
+        '{"type":"user","message":{"role":"user","content":[{"type":"text","text":"hi"}]},'
+        '"timestamp":"2026-06-01T10:00:00.000Z","sessionId":"s1","uuid":"u1",'
+        '"parentUuid":null,"cwd":"/p","gitBranch":"main","isSidechain":false,'
+        '"isMeta":false,"entrypoint":"cli","userType":"external","version":"2.1.0"}\n'
+        '{"type":"assistant","message":{"model":"claude-sonnet-4-6","usage":{'
+        '"input_tokens":5,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,'
+        '"output_tokens":10},"stop_reason":"end_turn","content":[]},'
+        '"timestamp":"2026-06-01T10:00:05.000Z","sessionId":"s1","uuid":"a1",'
+        '"parentUuid":"u1","cwd":"/p","gitBranch":"main","isSidechain":false,'
+        '"entrypoint":"cli","userType":"external","version":"2.1.0"}\n'
+    )
+    indexer.index_all(conn, tmp_path, task_gap_minutes=30)
+    count = conn.execute("SELECT COUNT(*) FROM messages WHERE session_id='s1'").fetchone()[0]
+    assert count == 1

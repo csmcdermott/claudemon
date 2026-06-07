@@ -18,7 +18,7 @@ def _is_new_query(record: dict) -> bool:
         record.get("type") == "user"
         and not record.get("isMeta", False)
         and not record.get("toolUseResult")
-        and record.get("isSidechain") is False
+        and not record.get("isSidechain", True)
     )
 
 
@@ -170,7 +170,7 @@ def index_file(
 
                 short_id = session_id[:6]
                 task_id = f"{short_id}:{task_num}" if task_num > 0 else f"{short_id}:1"
-                query_id = current_query_id or f"{short_id}:{task_num}:1"
+                query_id = current_query_id or f"{short_id}:1:1"
 
                 db.insert_message(
                     conn, session_id, task_id, query_id, ts, model,
