@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>claudemon</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<div id="banner" class="banner hidden">
+  <div class="pulse"></div>
+  <span>Working in <strong id="banner-project"></strong></span>
+  <span class="banner-meta" id="banner-meta"></span>
+</div>
+
+<div class="header">
+  <h1>claudemon</h1>
+  <div class="tabs">
+    <button class="tab" data-range="today">Today</button>
+    <button class="tab active" data-range="7d">7d</button>
+    <button class="tab" data-range="30d">30d</button>
+    <button class="tab" data-range="all">All</button>
+  </div>
+</div>
+
+<div class="stats">
+  <div class="stat">
+    <div class="stat-val" id="stat-sessions">—</div>
+    <div class="stat-lbl">Sessions</div>
+  </div>
+  <div class="stat">
+    <div class="stat-val" id="stat-input">—</div>
+    <div class="stat-lbl">Input tok</div>
+  </div>
+  <div class="stat">
+    <div class="stat-val" id="stat-output">—</div>
+    <div class="stat-lbl">Output tok</div>
+  </div>
+  <div class="stat">
+    <div class="stat-val" id="stat-cache">—</div>
+    <div class="stat-lbl">Cache hit</div>
+  </div>
+</div>
+
+<section>
+  <div class="sec-hdr">
+    <div class="sec-title">Daily tokens + cache hit %</div>
+    <div class="legend">
+      <div class="leg"><div class="leg-dot" style="background:#a78bfa"></div>out</div>
+      <div class="leg"><div class="leg-dot" style="background:#38bdf8"></div>in</div>
+      <div class="leg"><div class="leg-line" style="background:#34d399"></div>cache %</div>
+    </div>
+  </div>
+  <div class="axis-labels"><div class="axis-lbl">← tokens</div><div class="axis-lbl">cache % →</div></div>
+  <div class="chart-wrap"><canvas id="token-chart"></canvas></div>
+</section>
+
+<section>
+  <div class="sec-hdr">
+    <div class="sec-title">Queries + tokens/query</div>
+    <div class="legend">
+      <div class="leg"><div class="leg-dot" style="background:rgba(251,146,60,0.8)"></div>queries</div>
+      <div class="leg"><div class="leg-line" style="background:#fcd34d"></div>tok/query</div>
+    </div>
+  </div>
+  <div class="axis-labels"><div class="axis-lbl">← queries</div><div class="axis-lbl">tok/query →</div></div>
+  <div class="chart-wrap"><canvas id="query-chart"></canvas></div>
+</section>
+
+<section>
+  <div class="sec-hdr">
+    <div class="sec-title">Tasks &amp; queries</div>
+    <div class="legend">
+      <div class="leg">
+        <div style="display:flex;gap:2px">
+          <div class="leg-dot" style="background:rgba(167,139,250,0.8)"></div>
+          <div class="leg-dot" style="background:rgba(56,189,248,0.8)"></div>
+          <div class="leg-dot" style="background:rgba(52,211,153,0.8)"></div>
+        </div>
+        tasks
+      </div>
+      <div class="leg"><div class="leg-line" style="background:#fcd34d"></div>tok/task</div>
+    </div>
+  </div>
+  <div class="axis-labels"><div class="axis-lbl">← queries</div><div class="axis-lbl">tok/task →</div></div>
+  <div class="chart-wrap tall"><canvas id="task-chart"></canvas></div>
+</section>
+
+<section>
+  <div class="budget-row">
+    <div class="budget-lbl">Weekly output budget</div>
+    <div class="budget-val" id="budget-val">—</div>
+  </div>
+  <div class="budget-track"><div class="budget-fill" id="budget-fill" style="width:0%"></div></div>
+  <div class="budget-sub">Personal soft limit · edit in settings</div>
+</section>
+
+<section>
+  <div class="sec-title" style="margin-bottom:6px">Model breakdown</div>
+  <div id="models-list"></div>
+</section>
+
+<section>
+  <div class="sec-title" style="margin-bottom:4px">Recent sessions</div>
+  <div id="sessions-list"></div>
+</section>
+
+<footer>
+  <div class="footer-stat" id="footer-stat">—</div>
+  <button id="quit-btn">Quit</button>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
