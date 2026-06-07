@@ -59,12 +59,17 @@ class Watcher:
             str(sessions_dir),
             recursive=False,
         )
+        self._running = False
 
     def start(self) -> None:
+        self._running = True
         self._observer.start()
         logger.info("File watcher started")
 
     def stop(self) -> None:
+        if not self._running:
+            return
+        self._running = False
         self._observer.stop()
-        self._observer.join()
+        self._observer.join(timeout=5)
         logger.info("File watcher stopped")
