@@ -1,7 +1,6 @@
 import json
 import os
 import signal
-import socket
 import sqlite3
 import threading
 import time
@@ -43,7 +42,11 @@ def _make_handler(
 
             if parsed.path == "/":
                 index = dashboard_dir / "index.html"
-                body = index.read_bytes()
+                try:
+                    body = index.read_bytes()
+                except OSError:
+                    self._json_error(404, "dashboard not found")
+                    return
                 self._respond(200, "text/html; charset=utf-8", body)
                 return
 
@@ -84,7 +87,8 @@ def _make_handler(
                 self._json_error(500, str(exc))
 
         def do_POST(self):
-            if self.path == "/api/quit":
+            path = urlparse(self.path).path
+            if path == "/api/quit":
                 self._json({"ok": True})
                 threading.Thread(
                     target=lambda: os.kill(os.getpid(), signal.SIGTERM),
@@ -92,7 +96,7 @@ def _make_handler(
                 ).start()
                 return
 
-            if self.path != "/api/config":
+            if path != "/api/config":
                 self._json_error(404, "not found")
                 return
 
@@ -136,13 +140,9 @@ def start_server(
     port: int = 0,
 ) -> int:
     """Start HTTP server on localhost. Returns the port it bound to."""
-    if port == 0:
-        with socket.socket() as s:
-            s.bind(("127.0.0.1", 0))
-            port = s.getsockname()[1]
-
     handler = _make_handler(conn, config_path, dashboard_dir)
     server = HTTPServer(("127.0.0.1", port), handler)
+    port = server.server_address[1]
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     return port
