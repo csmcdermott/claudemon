@@ -93,3 +93,21 @@ def test_query_sessions_returns_aggregates(conn):
     assert rows[0]["output_tokens"] == 110
     assert rows[0]["task_count"] == 1
     assert rows[0]["query_count"] == 2
+
+
+def test_insert_message_idempotent(conn):
+    """Inserting the same message twice must not double-count rows."""
+    db.upsert_session(conn, "s1", "proj", None, 1000, 2000, "main")
+    args = ("s1", "s1:1", "s1:1:1", 1500, "claude-sonnet-4-6", 10, 50, 0, 0)
+    db.insert_message(conn, *args)
+    db.insert_message(conn, *args)
+    rows = conn.execute("SELECT * FROM messages WHERE session_id='s1'").fetchall()
+    assert len(rows) == 1
+
+
+def test_query_sessions_excludes_out_of_range(conn):
+    """Sessions whose started_at is outside range_ts must not appear."""
+    # Session started at 500, range is [1000, 2000] — should be excluded
+    db.upsert_session(conn, "s1", "proj", "Old Session", 500, 600, "main")
+    rows = db.query_sessions(conn, (1000, 2000), limit=5)
+    assert len(rows) == 0

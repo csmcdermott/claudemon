@@ -1,6 +1,9 @@
 import sqlite3
+import threading
 import time
 from pathlib import Path
+
+_LOCK = threading.Lock()
 
 DB_PATH = Path.home() / ".claudemon" / "claudemon.db"
 
@@ -24,7 +27,8 @@ CREATE TABLE IF NOT EXISTS messages (
     input_tokens           INTEGER DEFAULT 0,
     output_tokens          INTEGER DEFAULT 0,
     cache_creation_tokens  INTEGER DEFAULT 0,
-    cache_read_tokens      INTEGER DEFAULT 0
+    cache_read_tokens      INTEGER DEFAULT 0,
+    UNIQUE (session_id, query_id, timestamp)
 );
 
 CREATE TABLE IF NOT EXISTS file_cursors (
@@ -50,6 +54,7 @@ def connect(path: Path = DB_PATH) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(SCHEMA)
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 
@@ -62,14 +67,15 @@ def upsert_session(
     ended_at: int,
     git_branch: str | None,
 ) -> None:
-    conn.execute("""
-        INSERT INTO sessions (session_id, project, title, started_at, ended_at, git_branch)
-        VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(session_id) DO UPDATE SET
-            title     = COALESCE(excluded.title, title),
-            ended_at  = MAX(ended_at, excluded.ended_at)
-    """, (session_id, project, title, started_at, ended_at, git_branch))
-    conn.commit()
+    with _LOCK:
+        conn.execute("""
+            INSERT INTO sessions (session_id, project, title, started_at, ended_at, git_branch)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(session_id) DO UPDATE SET
+                title     = COALESCE(excluded.title, title),
+                ended_at  = MAX(ended_at, excluded.ended_at)
+        """, (session_id, project, title, started_at, ended_at, git_branch))
+        conn.commit()
 
 
 def insert_message(
@@ -84,14 +90,15 @@ def insert_message(
     cache_creation_tokens: int,
     cache_read_tokens: int,
 ) -> None:
-    conn.execute("""
-        INSERT INTO messages
-            (session_id, task_id, query_id, timestamp, model,
-             input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (session_id, task_id, query_id, timestamp, model,
-          input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens))
-    conn.commit()
+    with _LOCK:
+        conn.execute("""
+            INSERT OR IGNORE INTO messages
+                (session_id, task_id, query_id, timestamp, model,
+                 input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (session_id, task_id, query_id, timestamp, model,
+              input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens))
+        conn.commit()
 
 
 def get_cursor(conn: sqlite3.Connection, file_path: str) -> sqlite3.Row | None:
@@ -110,21 +117,22 @@ def update_cursor(
     last_branch: str | None,
     last_timestamp: int,
 ) -> None:
-    conn.execute("""
-        INSERT INTO file_cursors
-            (file_path, last_offset, last_modified, last_task_num,
-             last_query_num, last_branch, last_timestamp)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(file_path) DO UPDATE SET
-            last_offset    = excluded.last_offset,
-            last_modified  = excluded.last_modified,
-            last_task_num  = excluded.last_task_num,
-            last_query_num = excluded.last_query_num,
-            last_branch    = excluded.last_branch,
-            last_timestamp = excluded.last_timestamp
-    """, (file_path, last_offset, last_modified, last_task_num,
-          last_query_num, last_branch, last_timestamp))
-    conn.commit()
+    with _LOCK:
+        conn.execute("""
+            INSERT INTO file_cursors
+                (file_path, last_offset, last_modified, last_task_num,
+                 last_query_num, last_branch, last_timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(file_path) DO UPDATE SET
+                last_offset    = excluded.last_offset,
+                last_modified  = excluded.last_modified,
+                last_task_num  = excluded.last_task_num,
+                last_query_num = excluded.last_query_num,
+                last_branch    = excluded.last_branch,
+                last_timestamp = excluded.last_timestamp
+        """, (file_path, last_offset, last_modified, last_task_num,
+              last_query_num, last_branch, last_timestamp))
+        conn.commit()
 
 
 def query_stats(conn: sqlite3.Connection, range_ts: tuple[int, int]) -> dict:
@@ -284,11 +292,11 @@ def query_sessions(
         FROM sessions s
         LEFT JOIN messages m
             ON m.session_id = s.session_id AND m.timestamp BETWEEN ? AND ?
-        WHERE s.started_at <= ? {extra}
+        WHERE s.started_at BETWEEN ? AND ? {extra}
         GROUP BY s.session_id
         ORDER BY s.started_at DESC
         LIMIT ?
-    """, (start_ms, end_ms, end_ms) + extra_params + (limit,)).fetchall()
+    """, (start_ms, end_ms, start_ms, end_ms) + extra_params + (limit,)).fetchall()
 
     return [dict(r) for r in rows]
 
