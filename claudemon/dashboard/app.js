@@ -105,7 +105,8 @@ function initCharts() {
         callbacks: {
           title: items => items[0].label,
           label: item => {
-            if (item.dataset.label === 'tok/task') return ` avg tok/task: ${fmt(item.raw)}`;
+            if (item.dataset.label === 'p50 tok') return ` p50: ${fmt(item.raw)}`;
+            if (item.dataset.label === 'top tok') return ` max: ${fmt(item.raw)}`;
             return ` ${item.dataset.label}: ${item.raw} quer${item.raw === 1 ? 'y' : 'ies'}`;
           },
         },
@@ -113,7 +114,7 @@ function initCharts() {
       scales: {
         x: SCALE_X,
         yLeft: { ...SCALE_LEFT, stacked: true, yAxisID: 'yLeft' },
-        yRight: { ...SCALE_RIGHT('#fcd34d', v => v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(0)+'k' : v), yAxisID: 'yRight' },
+        yRight: { ...SCALE_RIGHT('#888', v => v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(0)+'k' : v), yAxisID: 'yRight' },
       },
     },
   });
@@ -261,7 +262,8 @@ function renderTaskChart(tasksData, range) {
   taskChart.options.plugins.tooltip.callbacks = {
     title: items => items[0].label,
     label: item => {
-      if (item.dataset.label === 'tok/task') return ` avg tok/task: ${fmt(item.raw)}`;
+      if (item.dataset.label === 'p50 tok') return ` p50: ${fmt(item.raw)}`;
+      if (item.dataset.label === 'top tok') return ` max: ${fmt(item.raw)}`;
       const task = padded[item.dataIndex]?.tasks[item.datasetIndex];
       const name = task?.label || item.dataset.label;
       const q = item.raw;
@@ -269,19 +271,26 @@ function renderTaskChart(tasksData, range) {
     },
   };
 
-  // Only show the tok/task line when there are multiple data points with data.
-  const activeDays = padded.filter(d => d.tasks.length > 0).length;
+  const activeBuckets = padded.filter(d => d.tasks.length > 0).length;
   taskChart.data.labels = labels;
   taskChart.data.datasets = [
     ...stackDatasets,
-    ...(activeDays >= 2 ? [{
-      type: 'line', label: 'tok/task',
-      data: padded.map(d => d.tasks.length ? d.avg_tokens_per_task : null),
-      borderColor: '#fcd34d', borderWidth: 2,
-      pointRadius: 3, pointBackgroundColor: '#fcd34d',
-      pointBorderColor: '#16161e', pointBorderWidth: 1.5,
-      spanGaps: false, tension: 0.4, yAxisID: 'yRight', order: 1,
-    }] : []),
+    ...(activeBuckets >= 2 ? [
+      {
+        type: 'line', label: 'p50 tok',
+        data: padded.map(d => d.tasks.length ? d.p50_tokens_per_task : null),
+        borderColor: '#fcd34d', borderWidth: 1.5, borderDash: [4, 2],
+        pointRadius: 2, pointBackgroundColor: '#fcd34d',
+        spanGaps: false, tension: 0.4, yAxisID: 'yRight', order: 1,
+      },
+      {
+        type: 'line', label: 'top tok',
+        data: padded.map(d => d.tasks.length ? d.max_tokens_per_task : null),
+        borderColor: '#f87171', borderWidth: 1.5,
+        pointRadius: 2, pointBackgroundColor: '#f87171',
+        spanGaps: false, tension: 0.4, yAxisID: 'yRight', order: 1,
+      },
+    ] : []),
   ];
   taskChart.update();
 }
