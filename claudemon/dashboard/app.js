@@ -59,7 +59,11 @@ const api = {
   stats(range)    { return api.get(`/api/stats?range=${range}`); },
   timeline(range) { return api.get(`/api/timeline?range=${range}&bucket=${range === 'today' ? '1h' : '1d'}`); },
   tasks(range)    { return api.get(`/api/tasks?range=${range}`); },
-  sessions(range) { return api.get(`/api/sessions?range=${range}&limit=5`); },
+  queries(range) {
+    const bucket = isDayView(range) ? '1h' : '1d';
+    return api.get(`/api/queries?range=${range}&bucket=${bucket}`);
+  },
+  sessions(range) { return api.get(`/api/sessions?range=${range}&limit=10`); },
   active()        { return api.get(`/api/sessions?range=all&limit=1&active=true`); },
   config()        { return api.get(`/api/config`); },
 };
@@ -69,6 +73,7 @@ let tokenChart, queryChart, taskChart;
 // Last padded data — used by chart click handlers to resolve a clicked index → timestamp.
 let _paddedTimeline = [];
 let _paddedTasks = [];
+let _paddedQueries = [];
 
 // Drill into a specific day when clicking a bar in a multi-day chart.
 function onChartClick(_event, elements) {
@@ -76,7 +81,7 @@ function onChartClick(_event, elements) {
   // Only drill when already in a multi-day range, not when already in a day view.
   if (currentRange === 'today' || currentRange.startsWith('day:')) return;
   const idx = elements[0].index;
-  const ts = _paddedTimeline[idx]?.date ?? _paddedTasks[idx]?.date;
+  const ts = _paddedTimeline[idx]?.date ?? _paddedTasks[idx]?.date ?? _paddedQueries[idx]?.date;
   if (ts == null) return;
   currentRange = `day:${ts}`;
   refresh();
@@ -92,7 +97,22 @@ function initCharts() {
 
   queryChart = new Chart(document.getElementById('query-chart'), {
     data: { labels: [], datasets: [] },
-    options: { ...CHART_DEFAULTS, ...clickOpts, scales: { x: SCALE_X, yLeft: { ...SCALE_LEFT, yAxisID: 'yLeft' }, yRight: { ...SCALE_RIGHT('#fcd34d', v => v >= 1e3 ? (v/1e3).toFixed(0)+'k' : v), yAxisID: 'yRight' } } },
+    options: {
+      ...CHART_DEFAULTS, ...clickOpts,
+      plugins: { ...CHART_DEFAULTS.plugins, tooltip: {
+        ...CHART_DEFAULTS.plugins.tooltip,
+        filter: item => item.raw !== null && item.raw !== 0,
+        callbacks: {
+          title: items => items[0].label,
+          label: item => ` ${item.dataset.label}`,
+        },
+      }},
+      scales: {
+        x: SCALE_X,
+        yLeft: { ...SCALE_LEFT, stacked: true, yAxisID: 'yLeft' },
+        yRight: { ...SCALE_RIGHT('#888', v => v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(0)+'k' : v), yAxisID: 'yRight' },
+      },
+    },
   });
 
   taskChart = new Chart(document.getElementById('task-chart'), {
@@ -164,6 +184,38 @@ function padTasks(tasksData, range) {
   return result;
 }
 
+function padQueries(queriesData, range) {
+  if (isDayView(range)) {
+    const dayStart = range === 'today'
+      ? (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); })()
+      : parseInt(range.split(':')[1]);
+    const map = new Map(queriesData.map(b => [b.date, b]));
+    const result = [];
+    for (let h = 0; h < 24; h++) {
+      const ts = dayStart + h * 3_600_000;
+      result.push(map.get(ts) ?? {
+        date: ts, queries: [], other_count: 0, other_tokens: 0, p50_tpq: 0, max_tpq: 0,
+      });
+    }
+    return result;
+  }
+  const days = range === '30d' ? 30 : range === '7d' ? 7 : null;
+  if (!days) return queriesData;
+  const map = new Map(queriesData.map(b => [b.date, b]));
+  const result = [];
+  const now = new Date();
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    d.setHours(0, 0, 0, 0);
+    const ts = d.getTime();
+    result.push(map.get(ts) ?? {
+      date: ts, queries: [], other_count: 0, other_tokens: 0, p50_tpq: 0, max_tpq: 0,
+    });
+  }
+  return result;
+}
+
 // ── View mode ────────────────────────────────────────────────────────────────
 
 function isDayView(range) {
@@ -219,17 +271,70 @@ function renderTokenChart(timeline, range) {
   tokenChart.update();
 }
 
-function renderQueryChart(timeline, range) {
-  const padded = padTimeline(timeline, range);
-  queryChart.data.labels = padded.map(b => bucketLabel(b.date, range));
+function renderQueryChart(queriesData, range) {
+  const padded = padQueries(queriesData, range);
+  _paddedQueries = padded;
+  if (!padded.length) return;
+
+  const labels = padded.map(b => bucketLabel(b.date, range));
+  const maxQ = Math.max(...padded.map(b => b.queries?.length ?? 0), 0);
+
+  const stackDatasets = Array.from({ length: maxQ }, (_, i) => ({
+    type: 'bar',
+    label: `Query ${i + 1}`,
+    data: padded.map(b => b.queries?.[i]?.total_tokens ?? null),
+    backgroundColor: PALETTE[i % PALETTE.length],
+    borderColor: 'rgba(0,0,0,0.12)', borderWidth: 0.5,
+    borderRadius: i === 0 ? { bottomLeft: 3, bottomRight: 3 } : 0,
+    borderSkipped: false, stack: 'queries', yAxisID: 'yLeft', order: 2,
+  }));
+
+  const otherDataset = {
+    type: 'bar',
+    label: 'other',
+    data: padded.map(b => b.other_tokens > 0 ? b.other_tokens : null),
+    backgroundColor: 'rgba(100,100,120,0.5)',
+    borderColor: 'rgba(0,0,0,0.12)', borderWidth: 0.5,
+    borderSkipped: false, stack: 'queries', yAxisID: 'yLeft', order: 2,
+  };
+
+  queryChart.options.plugins.tooltip.callbacks = {
+    title: items => items[0].label,
+    label: item => {
+      if (item.dataset.label === 'p50 tok') return ` p50: ${fmt(item.raw)}`;
+      if (item.dataset.label === 'top tok') return ` max: ${fmt(item.raw)}`;
+      if (item.dataset.label === 'other') {
+        const b = padded[item.dataIndex];
+        return ` +${b.other_count} other: ${fmt(item.raw)} tokens`;
+      }
+      const b = padded[item.dataIndex];
+      const q = b.queries?.[item.datasetIndex];
+      return ` ${q?.query_id ?? item.dataset.label}: ${fmt(item.raw)} tokens`;
+    },
+  };
+
+  const activeBuckets = padded.filter(b => (b.queries?.length ?? 0) > 0).length;
+  const hasOther = padded.some(b => b.other_tokens > 0);
+  queryChart.data.labels = labels;
   queryChart.data.datasets = [
-    { type: 'bar', label: 'Queries',
-      data: padded.map(b => b.queries || 0),
-      backgroundColor: 'rgba(251,146,60,0.7)', borderRadius: 3, borderSkipped: false, yAxisID: 'yLeft', order: 2 },
-    { type: 'line', label: 'Tok/query',
-      data: padded.map(b => b.tokens_per_query || null),
-      borderColor: '#fcd34d', borderWidth: 1.5, pointRadius: 2.5, pointBackgroundColor: '#fcd34d',
-      spanGaps: false, tension: 0.4, yAxisID: 'yRight', order: 1 },
+    ...stackDatasets,
+    ...(hasOther ? [otherDataset] : []),
+    ...(activeBuckets >= 2 ? [
+      {
+        type: 'line', label: 'p50 tok',
+        data: padded.map(b => b.p50_tpq || null),
+        borderColor: '#fcd34d', borderWidth: 1.5, borderDash: [4, 2],
+        pointRadius: 2, pointBackgroundColor: '#fcd34d',
+        spanGaps: false, tension: 0.4, yAxisID: 'yRight', order: 1,
+      },
+      {
+        type: 'line', label: 'top tok',
+        data: padded.map(b => b.max_tpq || null),
+        borderColor: '#f87171', borderWidth: 1.5,
+        pointRadius: 2, pointBackgroundColor: '#f87171',
+        spanGaps: false, tension: 0.4, yAxisID: 'yRight', order: 1,
+      },
+    ] : []),
   ];
   queryChart.update();
 }
@@ -352,10 +457,11 @@ function renderFooter(stats) {
 let currentRange = '7d';
 
 async function refresh() {
-  const [stats, timeline, tasks, sessions, config] = await Promise.all([
+  const [stats, timeline, tasks, queriesData, sessions, config] = await Promise.all([
     api.stats(currentRange),
     api.timeline(currentRange),
     api.tasks(currentRange),
+    api.queries(currentRange),
     api.sessions(currentRange),
     api.config(),
   ]);
@@ -367,7 +473,7 @@ async function refresh() {
     renderTodaySummary(stats, currentRange);
   } else {
     renderTokenChart(timeline, currentRange);
-    renderQueryChart(timeline, currentRange);
+    renderQueryChart(queriesData, currentRange);
     renderTaskChart(tasks, currentRange);
   }
 
