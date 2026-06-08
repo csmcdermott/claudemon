@@ -146,14 +146,20 @@ The pre-commit hook (`scripts/pre-commit.sh`) auto-bumps patch on every commit. 
 - **Hour-view detection**: `isHourView(range)` (delegates to `isHourBucket`) returns true for `today`, `day:X`, and sub-24h `custom:` ranges. Governs `#today-summary` visibility, hourly bucket labels, and pad function routing. `isHourBucket` also drives `bucket=1h` vs `bucket=1d` in API calls.
 - **`viewBuckets(range)`**: Returns ordered timestamp list for a range: `today` (12h rolling), `day:X` (24 hours from midnight), `custom:≤24h` (hourly), `custom:>24h` (daily), `[]` for unknown. Pad functions use it for `isHourView || custom:` ranges.
 - **Custom range format**: `custom:START_MS:END_MS`. Split by `:` → 3 parts. Threshold: ≤ 86_400_000 ms → 1h bucket, else 1d.
-- **Custom picker toggle**: `customPicker.style.display = 'none'` set in JS immediately after element capture; CSS-set display shows as `''` not `'none'` in inline style.
+- **Custom picker toggle**: `customPicker.style.display = 'none'` set in JS immediately after element capture; CSS-set display shows as `''` not `'none'` in inline style. Opening the picker sets `display = 'block'` (not `''`, which defers back to CSS).
 - **Day view shows charts**: `setViewMode` only shows/hides `#today-summary`; `.chart-section` elements are always visible. Day view shows stat counters + all three hourly charts. `bucketLabel` uses `isHourView(range)` for hourly labels.
+- **`bucketLabel(ts, range, prevTs)`**: Hour views use `fmtHour(ts)` (locale-independent: `h % 12 || 12` + `'am'`/`'pm'`). Day views use `String(new Date(ts).getDate())` for the day-of-month number. Midnight crossings in hour views prepend `"Jun 8 "` via `toLocaleDateString`. `prevTs` is the previous bucket's timestamp; pass `padded[i-1].date` in map callbacks.
+- **`SCALE_X` must include `type: 'category'`**: Without it, Chart.js auto-detects scale type from label content. Numeric-looking strings (e.g. `"8"`) cause it to infer a linear scale and generate index ticks (0, 1, 2, …) instead of using `chart.data.labels`.
+- **WKWebView caching**: Default data store persists HTTP cache across app launches. Fix: `WKWebsiteDataStore.nonPersistentDataStore()` in `WKWebViewConfiguration`, plus `NSURLRequestReloadIgnoringLocalCacheData` policy on `loadRequest_`. Server also sends `Cache-Control: no-store` on all responses.
 - **py2app bundle**: `setup.py` subclasses `py2app.build_app.py2app` to clear `install_requires` before `finalize_options` (py2app 0.28 rejects it; setuptools populates it from pyproject.toml). Dashboard path in bundled mode: `Path(NSBundle.mainBundle().resourcePath()) / "dashboard"` (guarded by `sys.frozen`). `just setup` installs py2app into the venv. First launch of unsigned bundle requires right-click → Open.
 
 ## Recently Changed Areas
 
 | Date | File / Area | What changed |
 | --- | --- | --- |
+| 2026-06-08 | popover.py | WKWebView now uses `nonPersistentDataStore` + `NSURLRequestReloadIgnoringLocalCacheData`; no stale cache across reinstalls |
+| 2026-06-08 | server.py | Added `Cache-Control: no-store` to all responses via `_respond` |
+| 2026-06-08 | dashboard/app.js | `SCALE_X` gains `type: 'category'`; `fmtHour` replaces `toLocaleTimeString`; `bucketLabel` uses day-of-month for day views, midnight-crossing date prefix for hour views; custom picker open uses `display='block'` |
 | 2026-06-08 | claudemon/_version.py (new) | Runtime version source of truth; auto-bumped by pre-commit hook |
 | 2026-06-08 | scripts/bump_version.py (new) | Bumps version in both pyproject.toml and _version.py |
 | 2026-06-08 | scripts/pre-commit.sh (new) | Auto-bumps patch version on every commit (skips merge commits) |

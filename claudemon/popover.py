@@ -9,8 +9,8 @@ from AppKit import (
     NSWindowStyleMaskResizable,
     NSWindowStyleMaskTitled,
 )
-from Foundation import NSURL, NSURLRequest
-from WebKit import WKWebView, WKWebViewConfiguration
+from Foundation import NSURL, NSURLRequest, NSURLRequestReloadIgnoringLocalCacheData
+from WebKit import WKWebsiteDataStore, WKWebView, WKWebViewConfiguration
 
 log = logging.getLogger(__name__)
 
@@ -51,6 +51,7 @@ class Popover:
             panel.setHidesOnDeactivate_(False)
 
             config = WKWebViewConfiguration.alloc().init()
+            config.setWebsiteDataStore_(WKWebsiteDataStore.nonPersistentDataStore())
             webview = WKWebView.alloc().initWithFrame_configuration_(
                 panel.contentView().bounds(), config
             )
@@ -77,7 +78,10 @@ class Popover:
 
         log.info("popover: loading URL %s", self._url)
         url = NSURL.URLWithString_(self._url)
-        self._webview.loadRequest_(NSURLRequest.requestWithURL_(url))
+        req = NSURLRequest.requestWithURL_cachePolicy_timeoutInterval_(
+            url, NSURLRequestReloadIgnoringLocalCacheData, 30
+        )
+        self._webview.loadRequest_(req)
 
         try:
             self._position_near_button(button)

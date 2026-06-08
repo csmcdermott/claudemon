@@ -30,6 +30,7 @@ const SCALE_RIGHT = (color, fmt) => ({
   border: { display: false },
 });
 const SCALE_X = {
+  type: 'category',
   grid: { display: false },
   ticks: { color: '#555', font: { size: 9 } },
   border: { display: false },
@@ -69,8 +70,8 @@ function updateCustomTabLabel() {
   const end = new Date(endMs);
   if (endMs - startMs <= 24 * 3_600_000) {
     const date = start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-    const s = start.toLocaleTimeString(undefined, { hour: 'numeric' });
-    const e = end.toLocaleTimeString(undefined, { hour: 'numeric' });
+    const s = fmtHour(startMs);
+    const e = fmtHour(endMs);
     btn.textContent = `${date} ${s}–${e}`;
   } else {
     const s = start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
@@ -161,15 +162,23 @@ function initCharts() {
 
 // ── Label helpers ────────────────────────────────────────────────────────────
 
-function bucketLabel(ts, range) {
-  const d = new Date(ts);
+function fmtHour(ts) {
+  const h = new Date(ts).getHours();
+  const h12 = h % 12 || 12;
+  return `${h12}${h < 12 ? 'am' : 'pm'}`;
+}
+
+function bucketLabel(ts, range, prevTs = null) {
   if (isHourView(range)) {
-    return d.toLocaleTimeString(undefined, { hour: 'numeric' });
+    const timeStr = fmtHour(ts);
+    // Show date prefix when crossing midnight into a new calendar day.
+    if (prevTs !== null && new Date(prevTs).getDate() !== new Date(ts).getDate()) {
+      const d = new Date(ts);
+      return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + timeStr;
+    }
+    return timeStr;
   }
-  if (range === '30d' || range === 'all' || range.startsWith('custom:')) {
-    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  }
-  return d.toLocaleDateString(undefined, { weekday: 'short' });
+  return String(new Date(ts).getDate());
 }
 
 // ── Gap filling ──────────────────────────────────────────────────────────────
@@ -336,7 +345,7 @@ function renderTodaySummary(stats, range) {
 function renderTokenChart(timeline, range) {
   const padded = padTimeline(timeline, range);
   _paddedTimeline = padded;
-  tokenChart.data.labels = padded.map(b => bucketLabel(b.date, range));
+  tokenChart.data.labels = padded.map((b, i) => bucketLabel(b.date, range, i > 0 ? padded[i - 1].date : null));
   tokenChart.data.datasets = [
     { type: 'bar', label: 'Output', data: padded.map(b => b.output_tokens),
       backgroundColor: 'rgba(167,139,250,0.65)', borderRadius: 3, borderSkipped: false, yAxisID: 'yLeft', order: 2 },
@@ -354,7 +363,7 @@ function renderQueryChart(queriesData, range) {
   _paddedQueries = padded;
   if (!padded.length) return;
 
-  const labels = padded.map(b => bucketLabel(b.date, range));
+  const labels = padded.map((b, i) => bucketLabel(b.date, range, i > 0 ? padded[i - 1].date : null));
   const maxQ = Math.max(...padded.map(b => b.queries?.length ?? 0), 0);
 
   const stackDatasets = Array.from({ length: maxQ }, (_, i) => ({
@@ -422,7 +431,7 @@ function renderTaskChart(tasksData, range) {
   const padded = padTasks(tasksData, range);
   _paddedTasks = padded;
   if (!padded.length) return;
-  const labels = padded.map(d => bucketLabel(d.date, range));
+  const labels = padded.map((d, i) => bucketLabel(d.date, range, i > 0 ? padded[i - 1].date : null));
   const maxTasks = Math.max(...padded.map(d => d.tasks.length), 0);
 
   const stackDatasets = Array.from({ length: maxTasks }, (_, i) => ({
@@ -595,7 +604,7 @@ document.addEventListener('DOMContentLoaded', () => {
     customStart.value = toDatetimeLocal(sevenAgo);
     customEnd.value = toDatetimeLocal(now);
     document.getElementById('custom-error').textContent = '';
-    customPicker.style.display = '';
+    customPicker.style.display = 'block';
   });
 
   document.getElementById('custom-apply').addEventListener('click', () => {
