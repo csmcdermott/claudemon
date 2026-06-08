@@ -576,6 +576,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const customTab = document.getElementById('custom-tab');
   const customPicker = document.getElementById('custom-picker');
+  customPicker.style.display = 'none';
   const customStart = document.getElementById('custom-start');
   const customEnd = document.getElementById('custom-end');
 
