@@ -138,3 +138,7 @@ def test_query_tasks_hourly_bucket(conn):
     for b in result:
         assert "p50_tokens_per_task" in b
         assert "max_tokens_per_task" in b
+    toks_by_p50 = {b["p50_tokens_per_task"] for b in result}
+    toks_by_max = {b["max_tokens_per_task"] for b in result}
+    assert toks_by_p50 == {30, 70}
+    assert toks_by_max == {30, 70}
