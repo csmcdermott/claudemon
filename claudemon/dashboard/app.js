@@ -181,12 +181,13 @@ function viewBuckets(range) {
       return out;
     }
   }
+  return [];
 }
 
 function padTimeline(timeline, range) {
-  if (isDayView(range)) {
+  if (isHourView(range) || range.startsWith('custom:')) {
     const map = new Map(timeline.map(b => [b.date, b]));
-    return dayViewBuckets(range).map(ts => map.get(ts) ?? {
+    return viewBuckets(range).map(ts => map.get(ts) ?? {
       date: ts, input_tokens: 0, output_tokens: 0,
       cache_hit_rate: 0, queries: 0, tokens_per_query: 0,
     });
@@ -210,9 +211,9 @@ function padTimeline(timeline, range) {
 }
 
 function padTasks(tasksData, range) {
-  if (isDayView(range)) {
+  if (isHourView(range) || range.startsWith('custom:')) {
     const map = new Map(tasksData.map(d => [d.date, d]));
-    return dayViewBuckets(range).map(ts => map.get(ts) ?? {
+    return viewBuckets(range).map(ts => map.get(ts) ?? {
       date: ts, tasks: [],
       avg_tokens_per_task: 0, p50_tokens_per_task: 0, max_tokens_per_task: 0,
     });
@@ -236,9 +237,9 @@ function padTasks(tasksData, range) {
 }
 
 function padQueries(queriesData, range) {
-  if (isDayView(range)) {
+  if (isHourView(range) || range.startsWith('custom:')) {
     const map = new Map(queriesData.map(b => [b.date, b]));
-    return dayViewBuckets(range).map(ts => map.get(ts) ?? {
+    return viewBuckets(range).map(ts => map.get(ts) ?? {
       date: ts, queries: [], other_count: 0, other_tokens: 0, p50_tpq: 0, max_tpq: 0,
     });
   }
@@ -271,8 +272,7 @@ function isHourBucket(range) {
 }
 
 function isHourView(range) {
-  return range === 'today' || range.startsWith('day:') ||
-    (range.startsWith('custom:') && isHourBucket(range));
+  return isHourBucket(range);
 }
 
 function setViewMode(range) {
