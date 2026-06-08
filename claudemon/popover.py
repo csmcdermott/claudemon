@@ -31,17 +31,18 @@ class Popover:
         self._webview = webview
         return popover
 
-    def toggle(self, sender) -> None:
-        """Show or close the popover anchored to the status item button."""
+    def toggle(self, button) -> None:
+        """Show or close the popover anchored to the status item button.
+
+        button: the NSButton from status_item.button() — passed directly so the
+        popover can anchor to the correct position in the menu bar.
+        """
         if self._popover.isShown():
             self._popover.close()
         else:
             url = NSURL.URLWithString_(self._url)
             self._webview.loadRequest_(NSURLRequest.requestWithURL_(url))
-
-            button = getattr(sender, '_status_item', None)
             if button is not None:
-                button = button.button()
                 self._popover.showRelativeToRect_ofView_preferredEdge_(
                     button.bounds(), button, NSRectEdgeMinY
                 )
