@@ -5,7 +5,7 @@
 | **Project name** | claudemon |
 | **Purpose** | macOS menu bar app to monitor Claude Code usage in real time — token counts, cache hit rates, query/task analytics, active session state |
 | **Target release** | v1.0 (personal use) |
-| **Last updated** | 2026-06-08 (in-memory DB, .app bundle distribution) |
+| **Last updated** | 2026-06-08 (dashboard enhancements: p50/max lines, stacked queries chart, hourly day views, section reorder) |
 
 ## Tech Stack
 
@@ -96,8 +96,9 @@ claudemon/
 ```
 GET  /api/stats?range=today|7d|30d|all|day:MS
 GET  /api/timeline?range=...&bucket=1h|1d          ← returns queries + tokens_per_query per bucket
-GET  /api/tasks?range=...                           ← returns label (session title or project) per task
-GET  /api/sessions?range=...&limit=5&active=false
+GET  /api/tasks?range=...&bucket=1h|1d             ← returns p50/max/avg tokens per task + per-bucket tasks list
+GET  /api/queries?range=...&bucket=1h|1d           ← returns top-10 queries by token volume + other + p50/max per bucket
+GET  /api/sessions?range=...&limit=10&active=false
 GET  /api/config
 POST /api/config
 POST /api/quit   → sends SIGTERM to process (used by dashboard Quit button)
@@ -105,7 +106,10 @@ POST /api/quit   → sends SIGTERM to process (used by dashboard Quit button)
 
 `range=day:MS` is a specific local calendar day (MS = local midnight UTC ms as returned by chart bucket data). Server computes end as `datetime.fromtimestamp(MS/1000) + timedelta(days=1)` (DST-safe).
 
+`/api/tasks` and `/api/queries` both accept `bucket=1h|1d`; the JS passes `1h` for day views and `1d` otherwise.
+
 Full spec: `docs/superpowers/specs/2026-06-07-claudemon-design.md`
+Dashboard enhancements spec: `docs/superpowers/specs/2026-06-08-dashboard-enhancements-design.md`
 Implementation plan: `docs/superpowers/plans/2026-06-07-claudemon.md`
 
 **Error shape:** HTTP 500 with `{"error": "message"}` JSON body.
@@ -127,14 +131,24 @@ Implementation plan: `docs/superpowers/plans/2026-06-07-claudemon.md`
 - **`/api/quit` fires SIGTERM in a daemon thread**: Ensures the HTTP response is sent before the process exits.
 - **In-memory DB**: `db.connect()` always returns `sqlite3.connect(":memory:")`. No `DB_PATH` constant exists. The `file_cursors` table lives in the same in-memory DB — byte-offset cursors survive within a session but are discarded on quit, triggering a full re-index on next launch.
 - **Timezone bucketing**: `_tz_offset_ms()` in server.py = `datetime.now().astimezone().utcoffset().total_seconds() * 1000`. `_local_trunc(bucket_ms, tz_offset_ms)` in db.py applies it as `((ts+tz)/bucket)*bucket - tz`. Both `query_timeline` and `query_tasks` accept `tz_offset_ms`.
-- **Day drill-down**: Clicking a chart bar sets `currentRange = "day:<local_midnight_ms>"`. JS stores last padded timeline/tasks in `_paddedTimeline`/`_paddedTasks` module vars for index-based lookup in the click handler.
-- **Gap filling**: `padTimeline(timeline, range)` and `padTasks(tasksData, range)` in app.js generate all expected day buckets using `d.setHours(0,0,0,0)` in the browser's local timezone, merging with real data. Works because server and browser share the same timezone (local app).
+- **Day drill-down**: Clicking a chart bar sets `currentRange = "day:<local_midnight_ms>"`. JS stores last padded data in `_paddedTimeline`/`_paddedTasks`/`_paddedQueries` module vars; `onChartClick` resolves the timestamp via `_paddedTimeline[idx]?.date ?? _paddedTasks[idx]?.date ?? _paddedQueries[idx]?.date`.
+- **Gap filling**: `padTimeline`, `padTasks`, `padQueries` in app.js generate all expected buckets (24 hourly for day views, 7/30 daily for multi-day, raw for 'all'). Day-view start anchored via `dayViewStart(range)` helper — returns local midnight for 'today' or `parseInt(range.split(':')[1])` for 'day:X'. Works because server and browser share the same timezone.
+- **Stacked queries chart**: `/api/queries` returns top-10 queries per bucket sorted descending by total_tokens; remainder collapsed into `other_count`/`other_tokens`. p50/max computed over ALL queries (not just top 10). Frontend uses `queryIndex` property on each dataset to resolve tooltip labels stably regardless of dataset array position.
+- **p50 computation**: Uses lower-median formula `sorted_list[(n-1)//2]`. SQLite has no native MEDIAN so computed in Python after fetching per-entity token sums.
+- **Day view shows charts**: `setViewMode` only shows/hides `#today-summary`; `.chart-section` elements are always visible. Day view shows stat counters + all three hourly charts. `bucketLabel` uses `isDayView(range)` (covers both 'today' and 'day:X') for hourly labels.
 - **py2app bundle**: `setup.py` subclasses `py2app.build_app.py2app` to clear `install_requires` before `finalize_options` (py2app 0.28 rejects it; setuptools populates it from pyproject.toml). Dashboard path in bundled mode: `Path(NSBundle.mainBundle().resourcePath()) / "dashboard"` (guarded by `sys.frozen`). `just setup` installs py2app into the venv. First launch of unsigned bundle requires right-click → Open.
 
 ## Recently Changed Areas
 
 | Date | File / Area | What changed |
 | --- | --- | --- |
+| 2026-06-08 | db.py | Added `bucket` param + `p50_tokens_per_task`/`max_tokens_per_task` to `query_tasks`; added `query_query_breakdown` |
+| 2026-06-08 | server.py | Added `/api/queries` route; pass `bucket` param to `query_tasks`; sessions default limit now 10 |
+| 2026-06-08 | dashboard/index.html | Section reorder (stats→tokens→sessions→tasks→queries→models→budget); updated legends; p50/max legend items |
+| 2026-06-08 | dashboard/style.css | `.leg-line.leg-dashed` for p50 legend; `#sessions-list` max-height 188px + scroll |
+| 2026-06-08 | dashboard/app.js | New `padQueries`, `renderQueryChart` (stacked), `api.queries`; p50/max lines on both charts; hourly day views; `dayViewStart` helper; `setViewMode` simplified |
+| 2026-06-08 | tests/test_db.py | 5 new tests for `query_tasks` p50/max + hourly, `query_query_breakdown` top-N/few/hourly |
+| 2026-06-08 | tests/test_server.py | 3 new tests for `/api/queries`, `/api/tasks` p50/max fields |
 | 2026-06-08 | db.py | Removed `DB_PATH`; `connect()` always returns `":memory:"` (no persistent file) |
 | 2026-06-08 | app.py | Removed `DB_PATH`; added `sys.frozen` guard for bundled dashboard path; imports `NSBundle` |
 | 2026-06-08 | setup.py (new) | py2app bundle config; subclasses build command to clear install_requires |
