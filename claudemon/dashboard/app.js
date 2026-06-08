@@ -57,11 +57,10 @@ const api = {
     return r.json();
   },
   stats(range)    { return api.get(`/api/stats?range=${range}`); },
-  timeline(range) { return api.get(`/api/timeline?range=${range}&bucket=${isDayView(range) ? '1h' : '1d'}`); }, // isDayView hoisted
-  tasks(range)    { return api.get(`/api/tasks?range=${range}&bucket=${isDayView(range) ? '1h' : '1d'}`); },    // isDayView hoisted
+  timeline(range) { return api.get(`/api/timeline?range=${range}&bucket=${isHourBucket(range) ? '1h' : '1d'}`); },
+  tasks(range)    { return api.get(`/api/tasks?range=${range}&bucket=${isHourBucket(range) ? '1h' : '1d'}`); },
   queries(range) {
-    const bucket = isDayView(range) ? '1h' : '1d'; // isDayView is hoisted (function declaration below)
-    return api.get(`/api/queries?range=${range}&bucket=${bucket}`);
+    return api.get(`/api/queries?range=${range}&bucket=${isHourBucket(range) ? '1h' : '1d'}`);
   },
   sessions(range) { return api.get(`/api/sessions?range=${range}&limit=10`); },
   active()        { return api.get(`/api/sessions?range=all&limit=1&active=true`); },
@@ -79,7 +78,7 @@ let _paddedQueries = [];
 function onChartClick(_event, elements) {
   if (!elements.length) return;
   // Only drill when already in a multi-day range, not when already in a day view.
-  if (currentRange === 'today' || currentRange.startsWith('day:')) return;
+  if (isHourView(currentRange)) return;
   const idx = elements[0].index;
   const ts = _paddedTimeline[idx]?.date ?? _paddedTasks[idx]?.date ?? _paddedQueries[idx]?.date;
   if (ts == null) return;
@@ -136,10 +135,10 @@ function initCharts() {
 
 function bucketLabel(ts, range) {
   const d = new Date(ts);
-  if (isDayView(range)) {
+  if (isHourView(range)) {
     return d.toLocaleTimeString(undefined, { hour: 'numeric' });
   }
-  if (range === '30d' || range === 'all') {
+  if (range === '30d' || range === 'all' || range.startsWith('custom:')) {
     return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   }
   return d.toLocaleDateString(undefined, { weekday: 'short' });
@@ -147,28 +146,50 @@ function bucketLabel(ts, range) {
 
 // ── Gap filling ──────────────────────────────────────────────────────────────
 
-function dayViewStart(range) {
+function viewBuckets(range) {
   if (range === 'today') {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d.getTime();
+    const d = new Date(Date.now() - 12 * 3_600_000);
+    d.setMinutes(0, 0, 0);
+    const first = d.getTime();
+    const n = new Date(); n.setMinutes(0, 0, 0);
+    const last = n.getTime();
+    const out = [];
+    for (let ts = first; ts <= last; ts += 3_600_000) out.push(ts);
+    return out;
   }
-  return parseInt(range.split(':')[1]);
+  if (range.startsWith('day:')) {
+    const dayStart = parseInt(range.split(':')[1]);
+    return Array.from({ length: 24 }, (_, h) => dayStart + h * 3_600_000);
+  }
+  if (range.startsWith('custom:')) {
+    const parts = range.split(':');
+    const startMs = parseInt(parts[1]);
+    const endMs = parseInt(parts[2]);
+    if (endMs - startMs <= 24 * 3_600_000) {
+      const d = new Date(startMs); d.setMinutes(0, 0, 0);
+      const first = d.getTime();
+      const n = new Date(endMs); n.setMinutes(0, 0, 0);
+      const last = n.getTime();
+      const out = [];
+      for (let ts = first; ts <= last; ts += 3_600_000) out.push(ts);
+      return out;
+    } else {
+      const d = new Date(startMs); d.setHours(0, 0, 0, 0);
+      const n = new Date(endMs); n.setHours(0, 0, 0, 0);
+      const out = [];
+      for (let ts = d.getTime(); ts <= n.getTime(); ts += 86_400_000) out.push(ts);
+      return out;
+    }
+  }
 }
 
 function padTimeline(timeline, range) {
   if (isDayView(range)) {
-    const dayStart = dayViewStart(range);
     const map = new Map(timeline.map(b => [b.date, b]));
-    const result = [];
-    for (let h = 0; h < 24; h++) {
-      const ts = dayStart + h * 3_600_000;
-      result.push(map.get(ts) ?? {
-        date: ts, input_tokens: 0, output_tokens: 0,
-        cache_hit_rate: 0, queries: 0, tokens_per_query: 0,
-      });
-    }
-    return result;
+    return dayViewBuckets(range).map(ts => map.get(ts) ?? {
+      date: ts, input_tokens: 0, output_tokens: 0,
+      cache_hit_rate: 0, queries: 0, tokens_per_query: 0,
+    });
   }
   const days = range === '30d' ? 30 : range === '7d' ? 7 : null;
   if (!days) return timeline;
@@ -190,17 +211,11 @@ function padTimeline(timeline, range) {
 
 function padTasks(tasksData, range) {
   if (isDayView(range)) {
-    const dayStart = dayViewStart(range);
     const map = new Map(tasksData.map(d => [d.date, d]));
-    const result = [];
-    for (let h = 0; h < 24; h++) {
-      const ts = dayStart + h * 3_600_000;
-      result.push(map.get(ts) ?? {
-        date: ts, tasks: [],
-        avg_tokens_per_task: 0, p50_tokens_per_task: 0, max_tokens_per_task: 0,
-      });
-    }
-    return result;
+    return dayViewBuckets(range).map(ts => map.get(ts) ?? {
+      date: ts, tasks: [],
+      avg_tokens_per_task: 0, p50_tokens_per_task: 0, max_tokens_per_task: 0,
+    });
   }
   const days = range === '30d' ? 30 : range === '7d' ? 7 : null;
   if (!days) return tasksData;
@@ -222,16 +237,10 @@ function padTasks(tasksData, range) {
 
 function padQueries(queriesData, range) {
   if (isDayView(range)) {
-    const dayStart = dayViewStart(range);
     const map = new Map(queriesData.map(b => [b.date, b]));
-    const result = [];
-    for (let h = 0; h < 24; h++) {
-      const ts = dayStart + h * 3_600_000;
-      result.push(map.get(ts) ?? {
-        date: ts, queries: [], other_count: 0, other_tokens: 0, p50_tpq: 0, max_tpq: 0,
-      });
-    }
-    return result;
+    return dayViewBuckets(range).map(ts => map.get(ts) ?? {
+      date: ts, queries: [], other_count: 0, other_tokens: 0, p50_tpq: 0, max_tpq: 0,
+    });
   }
   const days = range === '30d' ? 30 : range === '7d' ? 7 : null;
   if (!days) return queriesData;
@@ -252,13 +261,22 @@ function padQueries(queriesData, range) {
 
 // ── View mode ────────────────────────────────────────────────────────────────
 
-function isDayView(range) {
-  return range === 'today' || range.startsWith('day:');
+function isHourBucket(range) {
+  if (range === 'today' || range.startsWith('day:')) return true;
+  if (range.startsWith('custom:')) {
+    const parts = range.split(':');
+    return (parseInt(parts[2]) - parseInt(parts[1])) <= 24 * 3_600_000;
+  }
+  return false;
+}
+
+function isHourView(range) {
+  return range === 'today' || range.startsWith('day:') ||
+    (range.startsWith('custom:') && isHourBucket(range));
 }
 
 function setViewMode(range) {
-  const day = isDayView(range);
-  document.getElementById('today-summary').classList.toggle('hidden', !day);
+  document.getElementById('today-summary').classList.toggle('hidden', !isHourView(range));
 }
 
 // ── Renderers ────────────────────────────────────────────────────────────────
@@ -502,7 +520,7 @@ async function refresh() {
   setViewMode(currentRange);
   renderStats(stats);
 
-  if (isDayView(currentRange)) {
+  if (isHourView(currentRange)) {
     renderTodaySummary(stats, currentRange);
   }
   renderTokenChart(timeline, currentRange);
