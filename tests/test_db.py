@@ -111,3 +111,30 @@ def test_query_sessions_excludes_out_of_range(conn):
     db.upsert_session(conn, "s1", "proj", "Old Session", 500, 600, "main")
     rows = db.query_sessions(conn, (1000, 2000), limit=5)
     assert len(rows) == 0
+
+
+def test_query_tasks_p50_max(conn):
+    db.upsert_session(conn, "s1", "proj", "T", 1000, 9000, "main")
+    # 3 tasks: tokens 100, 200, 300
+    db.insert_message(conn, "s1", "s1:1", "s1:1:1", 1000, "claude-sonnet-4-6", 40, 60, 0, 0)
+    db.insert_message(conn, "s1", "s1:2", "s1:2:1", 2000, "claude-sonnet-4-6", 80, 120, 0, 0)
+    db.insert_message(conn, "s1", "s1:3", "s1:3:1", 3000, "claude-sonnet-4-6", 120, 180, 0, 0)
+    result = db.query_tasks(conn, (0, int(time.time() * 1000)))
+    assert len(result) == 1
+    b = result[0]
+    assert b["p50_tokens_per_task"] == 200  # sorted[1] of [100, 200, 300]
+    assert b["max_tokens_per_task"] == 300
+    assert b["avg_tokens_per_task"] == 200
+
+
+def test_query_tasks_hourly_bucket(conn):
+    db.upsert_session(conn, "s1", "proj", None, 0, 99_000_000_000, "main")
+    hour1 = 1749340800000
+    hour2 = hour1 + 3_600_000
+    db.insert_message(conn, "s1", "s1:1", "s1:1:1", hour1 + 100, "claude-sonnet-4-6", 10, 20, 0, 0)
+    db.insert_message(conn, "s1", "s1:2", "s1:2:1", hour2 + 100, "claude-sonnet-4-6", 30, 40, 0, 0)
+    result = db.query_tasks(conn, (hour1, hour2 + 3_600_000), bucket="1h")
+    assert len(result) == 2
+    for b in result:
+        assert "p50_tokens_per_task" in b
+        assert "max_tokens_per_task" in b

@@ -97,7 +97,7 @@ def _make_handler(
                     self._json(db.query_timeline(conn, range_ts, bucket, _tz_offset_ms()))
 
                 elif parsed.path == "/api/tasks":
-                    self._json(db.query_tasks(conn, range_ts, _tz_offset_ms()))
+                    self._json(db.query_tasks(conn, range_ts, tz_offset_ms=_tz_offset_ms()))
 
                 elif parsed.path == "/api/sessions":
                     limit = int(qs.get("limit", ["5"])[0])

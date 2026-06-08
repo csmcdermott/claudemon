@@ -241,58 +241,67 @@ def query_timeline(
 def query_tasks(
     conn: sqlite3.Connection,
     range_ts: tuple[int, int],
+    bucket: str = "1d",
     tz_offset_ms: int = 0,
 ) -> list[dict]:
-    """Return per-day task breakdown for stacked chart."""
+    """Return per-bucket task breakdown for stacked chart.
+
+    bucket: '1h' or '1d'
+    """
     start_ms, end_ms = range_ts
-    day_trunc = _local_trunc(86400000, tz_offset_ms)
+    bucket_ms = 3_600_000 if bucket == "1h" else 86_400_000
+    trunc = _local_trunc(bucket_ms, tz_offset_ms)
     rows = conn.execute(f"""
         SELECT
-            {day_trunc}                                    AS day_ts,
+            {trunc}                                        AS bucket_ts,
             m.task_id,
             m.session_id,
             s.title                                        AS session_title,
             s.project                                      AS project,
             COUNT(DISTINCT m.query_id)                     AS queries,
-            COALESCE(SUM(m.input_tokens), 0)              AS input_tokens,
-            COALESCE(SUM(m.output_tokens), 0)             AS output_tokens
+            COALESCE(SUM(m.input_tokens), 0)               AS input_tokens,
+            COALESCE(SUM(m.output_tokens), 0)              AS output_tokens
         FROM messages m
         LEFT JOIN sessions s ON s.session_id = m.session_id
         WHERE m.timestamp BETWEEN ? AND ?
-        GROUP BY day_ts, m.task_id
-        ORDER BY day_ts, m.task_id
+        GROUP BY bucket_ts, m.task_id
+        ORDER BY bucket_ts, m.task_id
     """, (start_ms, end_ms)).fetchall()
 
-    days: dict[int, dict] = {}
+    buckets: dict[int, dict] = {}
     for r in rows:
-        day = r["day_ts"]
-        if day not in days:
-            days[day] = {"date": day, "tasks": [], "total_tokens": 0}
+        ts = r["bucket_ts"]
+        if ts not in buckets:
+            buckets[ts] = {"date": ts, "tasks": [], "total_tokens": 0}
         tok = r["input_tokens"] + r["output_tokens"]
-        # Extract task number from task_id (format: "{short_id}:{task_num}")
         try:
             task_num = int(r["task_id"].split(":")[-1])
         except (ValueError, IndexError):
             task_num = 1
         title = r["session_title"] or r["project"] or r["task_id"]
         label = title if task_num == 1 else f"{title} #{task_num}"
-        days[day]["tasks"].append({
+        buckets[ts]["tasks"].append({
             "task_id": r["task_id"],
             "label": label,
             "queries": r["queries"],
             "input_tokens": r["input_tokens"],
             "output_tokens": r["output_tokens"],
         })
-        days[day]["total_tokens"] += tok
+        buckets[ts]["total_tokens"] += tok
 
     result = []
-    for day_ts in sorted(days):
-        d = days[day_ts]
-        n_tasks = max(len(d["tasks"]), 1)
+    for ts in sorted(buckets):
+        d = buckets[ts]
+        task_tokens = sorted(
+            t["input_tokens"] + t["output_tokens"] for t in d["tasks"]
+        )
+        n = len(task_tokens)
         result.append({
-            "date": day_ts,
+            "date": ts,
             "tasks": d["tasks"],
-            "avg_tokens_per_task": round(d["total_tokens"] / n_tasks),
+            "avg_tokens_per_task": round(d["total_tokens"] / max(n, 1)),
+            "p50_tokens_per_task": task_tokens[(n - 1) // 2] if n > 0 else 0,
+            "max_tokens_per_task": task_tokens[-1] if n > 0 else 0,
         })
     return result
 
