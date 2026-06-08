@@ -102,14 +102,6 @@ function initCharts() {
       plugins: { ...CHART_DEFAULTS.plugins, tooltip: {
         ...CHART_DEFAULTS.plugins.tooltip,
         filter: item => item.raw !== null && item.raw !== 0,
-        callbacks: {
-          title: items => items[0].label,
-          label: item => {
-            if (item.dataset.label === 'p50 tok') return ` p50: ${fmt(item.raw)}`;
-            if (item.dataset.label === 'top tok') return ` max: ${fmt(item.raw)}`;
-            return ` ${item.dataset.label}: ${item.raw} quer${item.raw === 1 ? 'y' : 'ies'}`;
-          },
-        },
       }},
       scales: {
         x: SCALE_X,
@@ -167,7 +159,7 @@ function padTasks(tasksData, range) {
     d.setDate(d.getDate() - i);
     d.setHours(0, 0, 0, 0);
     const ts = d.getTime();
-    result.push(map.get(ts) ?? { date: ts, tasks: [], avg_tokens_per_task: 0 });
+    result.push(map.get(ts) ?? { date: ts, tasks: [], avg_tokens_per_task: 0, p50_tokens_per_task: 0, max_tokens_per_task: 0 });
   }
   return result;
 }
