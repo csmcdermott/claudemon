@@ -66,21 +66,39 @@ const api = {
 
 let tokenChart, queryChart, taskChart;
 
+// Last padded data — used by chart click handlers to resolve a clicked index → timestamp.
+let _paddedTimeline = [];
+let _paddedTasks = [];
+
+// Drill into a specific day when clicking a bar in a multi-day chart.
+function onChartClick(_event, elements) {
+  if (!elements.length) return;
+  // Only drill when already in a multi-day range, not when already in a day view.
+  if (currentRange === 'today' || currentRange.startsWith('day:')) return;
+  const idx = elements[0].index;
+  const ts = _paddedTimeline[idx]?.date ?? _paddedTasks[idx]?.date;
+  if (ts == null) return;
+  currentRange = `day:${ts}`;
+  refresh();
+}
+
 function initCharts() {
+  const clickOpts = { onClick: onChartClick };
+
   tokenChart = new Chart(document.getElementById('token-chart'), {
     data: { labels: [], datasets: [] },
-    options: { ...CHART_DEFAULTS, scales: { x: SCALE_X, yLeft: { ...SCALE_LEFT, yAxisID: 'yLeft' }, yRight: { ...SCALE_RIGHT('#34d399', v => v + '%'), yAxisID: 'yRight' } } },
+    options: { ...CHART_DEFAULTS, ...clickOpts, scales: { x: SCALE_X, yLeft: { ...SCALE_LEFT, yAxisID: 'yLeft' }, yRight: { ...SCALE_RIGHT('#34d399', v => v + '%'), yAxisID: 'yRight' } } },
   });
 
   queryChart = new Chart(document.getElementById('query-chart'), {
     data: { labels: [], datasets: [] },
-    options: { ...CHART_DEFAULTS, scales: { x: SCALE_X, yLeft: { ...SCALE_LEFT, yAxisID: 'yLeft' }, yRight: { ...SCALE_RIGHT('#fcd34d', v => v >= 1e3 ? (v/1e3).toFixed(0)+'k' : v), yAxisID: 'yRight' } } },
+    options: { ...CHART_DEFAULTS, ...clickOpts, scales: { x: SCALE_X, yLeft: { ...SCALE_LEFT, yAxisID: 'yLeft' }, yRight: { ...SCALE_RIGHT('#fcd34d', v => v >= 1e3 ? (v/1e3).toFixed(0)+'k' : v), yAxisID: 'yRight' } } },
   });
 
   taskChart = new Chart(document.getElementById('task-chart'), {
     data: { labels: [], datasets: [] },
     options: {
-      ...CHART_DEFAULTS,
+      ...CHART_DEFAULTS, ...clickOpts,
       plugins: { ...CHART_DEFAULTS.plugins, tooltip: {
         ...CHART_DEFAULTS.plugins.tooltip,
         filter: item => item.raw !== null && item.raw !== 0,
@@ -101,6 +119,73 @@ function initCharts() {
   });
 }
 
+// ── Label helpers ────────────────────────────────────────────────────────────
+
+function bucketLabel(ts, range) {
+  const d = new Date(ts);
+  if (range === 'today') {
+    return d.toLocaleTimeString(undefined, { hour: 'numeric' });   // "2 PM"
+  }
+  if (range === '30d' || range === 'all') {
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); // "Jun 7"
+  }
+  return d.toLocaleDateString(undefined, { weekday: 'short' });    // "Mon"
+}
+
+// ── Gap filling ──────────────────────────────────────────────────────────────
+
+function padTimeline(timeline, range) {
+  const days = range === '30d' ? 30 : range === '7d' ? 7 : null;
+  if (!days) return timeline;
+
+  const map = new Map(timeline.map(b => [b.date, b]));
+  const result = [];
+  const now = new Date();
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    d.setHours(0, 0, 0, 0);
+    const ts = d.getTime();
+    result.push(map.get(ts) ?? {
+      date: ts, input_tokens: 0, output_tokens: 0,
+      cache_hit_rate: 0, queries: 0, tokens_per_query: 0,
+    });
+  }
+  return result;
+}
+
+function padTasks(tasksData, range) {
+  const days = range === '30d' ? 30 : range === '7d' ? 7 : null;
+  if (!days) return tasksData;
+
+  const map = new Map(tasksData.map(d => [d.date, d]));
+  const result = [];
+  const now = new Date();
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    d.setHours(0, 0, 0, 0);
+    const ts = d.getTime();
+    result.push(map.get(ts) ?? { date: ts, tasks: [], avg_tokens_per_task: 0 });
+  }
+  return result;
+}
+
+// ── View mode ────────────────────────────────────────────────────────────────
+
+function isDayView(range) {
+  return range === 'today' || range.startsWith('day:');
+}
+
+function setViewMode(range) {
+  const day = isDayView(range);
+  document.querySelectorAll('.chart-section').forEach(s =>
+    s.classList.toggle('hidden', day));
+  document.getElementById('today-summary').classList.toggle('hidden', !day);
+}
+
+// ── Renderers ────────────────────────────────────────────────────────────────
+
 function renderStats(stats) {
   document.getElementById('stat-sessions').textContent = stats.sessions;
   document.getElementById('stat-input').textContent    = fmt(stats.input_tokens);
@@ -108,60 +193,95 @@ function renderStats(stats) {
   document.getElementById('stat-cache').textContent    = stats.cache_hit_rate + '%';
 }
 
-function renderTokenChart(timeline) {
-  const labels = timeline.map(b => new Date(b.date).toLocaleDateString(undefined, { weekday: 'short' }));
-  tokenChart.data.labels = labels;
+function renderTodaySummary(stats, range) {
+  document.getElementById('today-tasks').textContent   = stats.tasks;
+  document.getElementById('today-queries').textContent = stats.queries;
+  document.getElementById('today-tpq').textContent     = fmt(stats.tokens_per_query);
+  document.getElementById('today-tpt').textContent     = fmt(stats.tokens_per_task);
+
+  const lbl = document.getElementById('today-date-label');
+  if (range.startsWith('day:')) {
+    const ts = parseInt(range.split(':')[1]);
+    lbl.textContent = new Date(ts).toLocaleDateString(undefined,
+      { weekday: 'long', month: 'long', day: 'numeric' });
+    lbl.classList.remove('hidden');
+  } else {
+    lbl.classList.add('hidden');
+  }
+}
+
+function renderTokenChart(timeline, range) {
+  const padded = padTimeline(timeline, range);
+  _paddedTimeline = padded;
+  tokenChart.data.labels = padded.map(b => bucketLabel(b.date, range));
   tokenChart.data.datasets = [
-    { type: 'bar', label: 'Output', data: timeline.map(b => b.output_tokens),
+    { type: 'bar', label: 'Output', data: padded.map(b => b.output_tokens),
       backgroundColor: 'rgba(167,139,250,0.65)', borderRadius: 3, borderSkipped: false, yAxisID: 'yLeft', order: 2 },
-    { type: 'bar', label: 'Input',  data: timeline.map(b => b.input_tokens),
+    { type: 'bar', label: 'Input',  data: padded.map(b => b.input_tokens),
       backgroundColor: 'rgba(56,189,248,0.65)',  borderRadius: 3, borderSkipped: false, yAxisID: 'yLeft', order: 2 },
-    { type: 'line', label: 'Cache %', data: timeline.map(b => b.cache_hit_rate),
+    { type: 'line', label: 'Cache %', data: padded.map(b => b.cache_hit_rate),
       borderColor: '#34d399', borderWidth: 1.5, pointRadius: 2.5, pointBackgroundColor: '#34d399',
-      tension: 0.4, yAxisID: 'yRight', order: 1 },
+      spanGaps: true, tension: 0.4, yAxisID: 'yRight', order: 1 },
   ];
   tokenChart.update();
 }
 
-function renderQueryChart(timeline, stats) {
-  const labels = timeline.map(b => new Date(b.date).toLocaleDateString(undefined, { weekday: 'short' }));
-  const totalOut = timeline.reduce((s, b) => s + b.output_tokens, 0) || 1;
-  queryChart.data.labels = labels;
+function renderQueryChart(timeline, range) {
+  const padded = padTimeline(timeline, range);
+  queryChart.data.labels = padded.map(b => bucketLabel(b.date, range));
   queryChart.data.datasets = [
     { type: 'bar', label: 'Queries',
-      data: timeline.map(b => Math.round((b.output_tokens / totalOut) * (stats?.queries || 0))),
+      data: padded.map(b => b.queries || 0),
       backgroundColor: 'rgba(251,146,60,0.7)', borderRadius: 3, borderSkipped: false, yAxisID: 'yLeft', order: 2 },
     { type: 'line', label: 'Tok/query',
-      data: timeline.map(() => stats?.tokens_per_query || 0),
-      borderColor: '#fcd34d', borderWidth: 1.5, pointRadius: 0, tension: 0, yAxisID: 'yRight', order: 1 },
+      data: padded.map(b => b.tokens_per_query || null),
+      borderColor: '#fcd34d', borderWidth: 1.5, pointRadius: 2.5, pointBackgroundColor: '#fcd34d',
+      spanGaps: false, tension: 0.4, yAxisID: 'yRight', order: 1 },
   ];
   queryChart.update();
 }
 
-function renderTaskChart(tasksData) {
-  if (!tasksData.length) return;
-  const labels = tasksData.map(d => new Date(d.date).toLocaleDateString(undefined, { weekday: 'short' }));
-  const maxTasks = Math.max(...tasksData.map(d => d.tasks.length));
+function renderTaskChart(tasksData, range) {
+  const padded = padTasks(tasksData, range);
+  _paddedTasks = padded;
+  if (!padded.length) return;
+  const labels = padded.map(d => bucketLabel(d.date, range));
+  const maxTasks = Math.max(...padded.map(d => d.tasks.length), 0);
 
   const stackDatasets = Array.from({ length: maxTasks }, (_, i) => ({
     type: 'bar',
     label: `Task ${i + 1}`,
-    data: tasksData.map(d => d.tasks[i]?.queries ?? null),
+    data: padded.map(d => d.tasks[i]?.queries ?? null),
     backgroundColor: PALETTE[i % PALETTE.length],
     borderColor: 'rgba(0,0,0,0.12)', borderWidth: 0.5,
     borderRadius: i === 0 ? { bottomLeft: 3, bottomRight: 3 } : 0,
     borderSkipped: false, stack: 'tasks', yAxisID: 'yLeft', order: 2,
   }));
 
+  taskChart.options.plugins.tooltip.callbacks = {
+    title: items => items[0].label,
+    label: item => {
+      if (item.dataset.label === 'tok/task') return ` avg tok/task: ${fmt(item.raw)}`;
+      const task = padded[item.dataIndex]?.tasks[item.datasetIndex];
+      const name = task?.label || item.dataset.label;
+      const q = item.raw;
+      return ` ${name}: ${q} quer${q === 1 ? 'y' : 'ies'}`;
+    },
+  };
+
+  // Only show the tok/task line when there are multiple data points with data.
+  const activeDays = padded.filter(d => d.tasks.length > 0).length;
   taskChart.data.labels = labels;
   taskChart.data.datasets = [
     ...stackDatasets,
-    { type: 'line', label: 'tok/task',
-      data: tasksData.map(d => d.avg_tokens_per_task),
+    ...(activeDays >= 2 ? [{
+      type: 'line', label: 'tok/task',
+      data: padded.map(d => d.tasks.length ? d.avg_tokens_per_task : null),
       borderColor: '#fcd34d', borderWidth: 2,
       pointRadius: 3, pointBackgroundColor: '#fcd34d',
       pointBorderColor: '#16161e', pointBorderWidth: 1.5,
-      tension: 0.4, yAxisID: 'yRight', order: 1 },
+      spanGaps: false, tension: 0.4, yAxisID: 'yRight', order: 1,
+    }] : []),
   ];
   taskChart.update();
 }
@@ -238,10 +358,18 @@ async function refresh() {
     api.sessions(currentRange),
     api.config(),
   ]);
+
+  setViewMode(currentRange);
   renderStats(stats);
-  renderTokenChart(timeline);
-  renderQueryChart(timeline, stats);
-  renderTaskChart(tasks);
+
+  if (isDayView(currentRange)) {
+    renderTodaySummary(stats, currentRange);
+  } else {
+    renderTokenChart(timeline, currentRange);
+    renderQueryChart(timeline, currentRange);
+    renderTaskChart(tasks, currentRange);
+  }
+
   renderBudget(stats, config);
   renderModels(stats);
   renderSessions(sessions);

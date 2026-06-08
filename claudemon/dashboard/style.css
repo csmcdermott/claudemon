@@ -4,7 +4,7 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
   background: #16161e;
   color: #e8e8f0;
-  font-size: 13px;
+  font-size: 15px;
   overflow-x: hidden;
 }
 
@@ -15,7 +15,7 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: 13px;
   color: #86efac;
 }
 .banner.hidden { display: none; }
@@ -29,19 +29,19 @@ body {
   0%, 100% { opacity: 1; transform: scale(1); }
   50%       { opacity: 0.5; transform: scale(0.85); }
 }
-.banner-meta { color: rgba(134,239,172,0.45); margin-left: auto; font-size: 10px; }
+.banner-meta { color: rgba(134,239,172,0.45); margin-left: auto; font-size: 12px; }
 
 .header {
   padding: 12px 16px 10px;
   border-bottom: 1px solid rgba(255,255,255,0.06);
   display: flex; justify-content: space-between; align-items: center;
 }
-.header h1 { font-size: 15px; font-weight: 600; color: #f0f0f8; }
+.header h1 { font-size: 17px; font-weight: 600; color: #f0f0f8; }
 
 .tabs { display: flex; gap: 2px; background: rgba(255,255,255,0.05); border-radius: 6px; padding: 2px; }
 .tab {
-  font-size: 10px; font-weight: 500; padding: 3px 8px;
-  border-radius: 4px; color: #555; cursor: pointer; border: none;
+  font-size: 12px; font-weight: 500; padding: 3px 9px;
+  border-radius: 4px; color: #888; cursor: pointer; border: none;
   background: transparent;
 }
 .tab.active { background: rgba(167,139,250,0.15); color: #a78bfa; }
@@ -52,9 +52,9 @@ body {
   border-bottom: 1px solid rgba(255,255,255,0.06);
 }
 .stat { background: #16161e; padding: 10px; }
-.stat-val { font-size: 14px; font-weight: 700; color: #f0f0f8; letter-spacing: -.02em; }
-.stat-lbl { font-size: 9px; font-weight: 500; color: #555; text-transform: uppercase; letter-spacing: .06em; margin-top: 2px; }
-.stat-delta { font-size: 10px; margin-top: 2px; color: #34d399; }
+.stat-val { font-size: 16px; font-weight: 700; color: #f0f0f8; letter-spacing: -.02em; }
+.stat-lbl { font-size: 11px; font-weight: 500; color: #888; text-transform: uppercase; letter-spacing: .06em; margin-top: 2px; }
+.stat-delta { font-size: 12px; margin-top: 2px; color: #34d399; }
 
 section {
   padding: 12px 16px;
@@ -64,46 +64,61 @@ section {
   display: flex; justify-content: space-between; align-items: center;
   margin-bottom: 5px;
 }
-.sec-title { font-size: 10px; font-weight: 600; color: #555; text-transform: uppercase; letter-spacing: .08em; }
+.sec-title { font-size: 12px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: .08em; }
 .legend { display: flex; gap: 10px; }
-.leg { display: flex; align-items: center; gap: 4px; font-size: 9px; color: #555; }
+.leg { display: flex; align-items: center; gap: 4px; font-size: 11px; color: #888; }
 .leg-dot { width: 6px; height: 6px; border-radius: 2px; }
 .leg-line { width: 12px; height: 2px; border-radius: 1px; }
 .axis-labels { display: flex; justify-content: space-between; margin-bottom: 2px; }
-.axis-lbl { font-size: 9px; color: #2e2e3e; font-weight: 500; }
+.axis-lbl { font-size: 11px; color: #666; font-weight: 500; }
 .chart-wrap { height: 80px; position: relative; }
 .chart-wrap.tall { height: 130px; }
+.chart-wrap canvas { cursor: pointer; }
+
+.hidden { display: none !important; }
+
+.today-date {
+  font-size: 12px; color: #a78bfa; text-align: center;
+  margin-bottom: 10px; font-weight: 500; letter-spacing: .04em;
+}
+
+.today-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
+}
+.today-metric { text-align: center; padding: 8px 4px; }
+.today-val { font-size: 28px; font-weight: 700; color: #f0f0f8; letter-spacing: -.03em; }
+.today-lbl { font-size: 11px; font-weight: 500; color: #888; text-transform: uppercase; letter-spacing: .06em; margin-top: 4px; }
 
 .budget-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
-.budget-lbl { font-size: 11px; color: #666; }
-.budget-val { font-size: 11px; font-weight: 600; color: #c4b5fd; }
+.budget-lbl { font-size: 13px; color: #aaa; }
+.budget-val { font-size: 13px; font-weight: 600; color: #c4b5fd; }
 .budget-track { height: 4px; background: rgba(255,255,255,0.06); border-radius: 3px; overflow: hidden; }
 .budget-fill { height: 100%; border-radius: 3px; background: linear-gradient(90deg, #7c3aed, #a78bfa); }
-.budget-sub { font-size: 10px; color: #333; margin-top: 4px; }
+.budget-sub { font-size: 12px; color: #666; margin-top: 4px; }
 
-.model-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+.model-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
 .model-track { flex: 1; height: 3px; background: rgba(255,255,255,0.06); border-radius: 2px; overflow: hidden; }
 .model-fill { height: 100%; border-radius: 2px; }
-.model-name { font-size: 11px; color: #bbb; font-weight: 500; width: 76px; flex-shrink: 0; }
-.model-toks { font-size: 10px; color: #444; text-align: right; white-space: nowrap; width: 96px; flex-shrink: 0; }
+.model-name { font-size: 13px; color: #bbb; font-weight: 500; width: 88px; flex-shrink: 0; }
+.model-toks { font-size: 12px; color: #777; text-align: right; white-space: nowrap; width: 108px; flex-shrink: 0; }
 
 .s-row {
-  display: flex; align-items: center; gap: 8px; padding: 5px 0;
+  display: flex; align-items: center; gap: 8px; padding: 6px 0;
   border-bottom: 1px solid rgba(255,255,255,0.04);
 }
 .s-row:last-child { border-bottom: none; }
 .s-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
 .s-info { flex: 1; min-width: 0; }
-.s-title { font-size: 11px; color: #ccc; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.s-proj { font-size: 10px; color: #444; margin-top: 1px; }
+.s-title { font-size: 13px; color: #ccc; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.s-proj { font-size: 12px; color: #777; margin-top: 1px; }
 .s-right { text-align: right; flex-shrink: 0; }
-.s-tokens { font-size: 10px; color: #555; white-space: nowrap; }
-.s-tasks { font-size: 10px; color: #3a3a50; white-space: nowrap; margin-top: 1px; }
+.s-tokens { font-size: 12px; color: #888; white-space: nowrap; }
+.s-tasks { font-size: 12px; color: #666; white-space: nowrap; margin-top: 1px; }
 
 footer {
   padding: 9px 16px;
   display: flex; justify-content: space-between; align-items: center;
   border-bottom: none;
 }
-.footer-stat { font-size: 10px; color: #333; }
-#quit-btn { font-size: 11px; color: #444; background: none; border: none; cursor: pointer; }
+.footer-stat { font-size: 12px; color: #777; }
+#quit-btn { font-size: 13px; color: #777; background: none; border: none; cursor: pointer; }

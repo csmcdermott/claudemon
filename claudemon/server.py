@@ -4,18 +4,24 @@ import signal
 import sqlite3
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+
+
+def _tz_offset_ms() -> int:
+    """Local UTC offset in ms, DST-aware (e.g. -25_200_000 for UTC-7)."""
+    return int(datetime.now().astimezone().utcoffset().total_seconds() * 1000)
 
 import claudemon.db as db
 
 
 def _range_to_timestamps(range_str: str) -> tuple[int, int]:
     now = int(time.time() * 1000)
+    # Use local midnight so "today" matches the user's calendar day, not UTC.
     today_start = int(
-        datetime.now(timezone.utc)
+        datetime.now()
         .replace(hour=0, minute=0, second=0, microsecond=0)
         .timestamp() * 1000
     )
@@ -26,6 +32,14 @@ def _range_to_timestamps(range_str: str) -> tuple[int, int]:
             return now - 7 * 24 * 3600 * 1000, now
         case "30d":
             return now - 30 * 24 * 3600 * 1000, now
+        case s if s.startswith("day:"):
+            # day:<local_midnight_utc_ms> — return the full local calendar day
+            day_start_ms = int(s.split(":", 1)[1])
+            day_start_dt = datetime.fromtimestamp(day_start_ms / 1000).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            day_end_ms = int((day_start_dt + timedelta(days=1)).timestamp() * 1000) - 1
+            return day_start_ms, day_end_ms
         case _:
             return 0, now
 
@@ -80,10 +94,10 @@ def _make_handler(
 
                 elif parsed.path == "/api/timeline":
                     bucket = qs.get("bucket", ["1d"])[0]
-                    self._json(db.query_timeline(conn, range_ts, bucket))
+                    self._json(db.query_timeline(conn, range_ts, bucket, _tz_offset_ms()))
 
                 elif parsed.path == "/api/tasks":
-                    self._json(db.query_tasks(conn, range_ts))
+                    self._json(db.query_tasks(conn, range_ts, _tz_offset_ms()))
 
                 elif parsed.path == "/api/sessions":
                     limit = int(qs.get("limit", ["5"])[0])

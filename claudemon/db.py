@@ -189,19 +189,28 @@ def query_stats(conn: sqlite3.Connection, range_ts: tuple[int, int]) -> dict:
     }
 
 
+def _local_trunc(bucket_ms: int, tz_offset_ms: int) -> str:
+    """SQL expression: truncate a UTC-ms timestamp to the local bucket boundary (in UTC ms)."""
+    return (
+        f"((timestamp + {tz_offset_ms}) / {bucket_ms}) * {bucket_ms} - {tz_offset_ms}"
+    )
+
+
 def query_timeline(
-    conn: sqlite3.Connection, range_ts: tuple[int, int], bucket: str = "1d"
+    conn: sqlite3.Connection,
+    range_ts: tuple[int, int],
+    bucket: str = "1d",
+    tz_offset_ms: int = 0,
 ) -> list[dict]:
     """Return per-bucket token totals and cache hit rate.
 
     bucket: '1h' or '1d'
-    Returned dicts: {date, input_tokens, output_tokens, cache_hit_rate}
+    tz_offset_ms: local UTC offset in ms (e.g. -25200000 for UTC-7); default 0 = UTC.
+    Returned dicts: {date, input_tokens, output_tokens, cache_hit_rate, queries, tokens_per_query}
     """
     start_ms, end_ms = range_ts
-    if bucket == "1h":
-        trunc = "(timestamp / 3600000) * 3600000"
-    else:
-        trunc = "(timestamp / 86400000) * 86400000"
+    bucket_ms = 3600000 if bucket == "1h" else 86400000
+    trunc = _local_trunc(bucket_ms, tz_offset_ms)
 
     rows = conn.execute(f"""
         SELECT
@@ -209,7 +218,8 @@ def query_timeline(
             COALESCE(SUM(input_tokens), 0)                AS input_tokens,
             COALESCE(SUM(output_tokens), 0)               AS output_tokens,
             COALESCE(SUM(cache_creation_tokens), 0)       AS cache_creation,
-            COALESCE(SUM(cache_read_tokens), 0)           AS cache_read
+            COALESCE(SUM(cache_read_tokens), 0)           AS cache_read,
+            COUNT(DISTINCT query_id)                       AS queries
         FROM messages
         WHERE timestamp BETWEEN ? AND ?
         GROUP BY bucket_ts
@@ -220,29 +230,42 @@ def query_timeline(
     for r in rows:
         total = r["input_tokens"] + r["cache_read"] + r["cache_creation"]
         hit_rate = (r["cache_read"] / total * 100) if total > 0 else 0.0
+        tok = r["input_tokens"] + r["output_tokens"]
+        queries = r["queries"] or 1
         result.append({
             "date": r["bucket_ts"],
             "input_tokens": r["input_tokens"],
             "output_tokens": r["output_tokens"],
             "cache_hit_rate": round(hit_rate, 1),
+            "queries": r["queries"],
+            "tokens_per_query": round(tok / queries),
         })
     return result
 
 
-def query_tasks(conn: sqlite3.Connection, range_ts: tuple[int, int]) -> list[dict]:
+def query_tasks(
+    conn: sqlite3.Connection,
+    range_ts: tuple[int, int],
+    tz_offset_ms: int = 0,
+) -> list[dict]:
     """Return per-day task breakdown for stacked chart."""
     start_ms, end_ms = range_ts
-    rows = conn.execute("""
+    day_trunc = _local_trunc(86400000, tz_offset_ms)
+    rows = conn.execute(f"""
         SELECT
-            (timestamp / 86400000) * 86400000             AS day_ts,
-            task_id,
-            COUNT(DISTINCT query_id)                       AS queries,
-            COALESCE(SUM(input_tokens), 0)                AS input_tokens,
-            COALESCE(SUM(output_tokens), 0)               AS output_tokens
-        FROM messages
-        WHERE timestamp BETWEEN ? AND ?
-        GROUP BY day_ts, task_id
-        ORDER BY day_ts, task_id
+            {day_trunc}                                    AS day_ts,
+            m.task_id,
+            m.session_id,
+            s.title                                        AS session_title,
+            s.project                                      AS project,
+            COUNT(DISTINCT m.query_id)                     AS queries,
+            COALESCE(SUM(m.input_tokens), 0)              AS input_tokens,
+            COALESCE(SUM(m.output_tokens), 0)             AS output_tokens
+        FROM messages m
+        LEFT JOIN sessions s ON s.session_id = m.session_id
+        WHERE m.timestamp BETWEEN ? AND ?
+        GROUP BY day_ts, m.task_id
+        ORDER BY day_ts, m.task_id
     """, (start_ms, end_ms)).fetchall()
 
     days: dict[int, dict] = {}
@@ -251,8 +274,16 @@ def query_tasks(conn: sqlite3.Connection, range_ts: tuple[int, int]) -> list[dic
         if day not in days:
             days[day] = {"date": day, "tasks": [], "total_tokens": 0}
         tok = r["input_tokens"] + r["output_tokens"]
+        # Extract task number from task_id (format: "{short_id}:{task_num}")
+        try:
+            task_num = int(r["task_id"].split(":")[-1])
+        except (ValueError, IndexError):
+            task_num = 1
+        title = r["session_title"] or r["project"] or r["task_id"]
+        label = title if task_num == 1 else f"{title} #{task_num}"
         days[day]["tasks"].append({
             "task_id": r["task_id"],
+            "label": label,
             "queries": r["queries"],
             "input_tokens": r["input_tokens"],
             "output_tokens": r["output_tokens"],
@@ -302,9 +333,9 @@ def query_sessions(
 
 
 def query_today_output_tokens(conn: sqlite3.Connection) -> int:
-    from datetime import datetime, timezone
+    from datetime import datetime
     today_start = int(
-        datetime.now(timezone.utc)
+        datetime.now()
         .replace(hour=0, minute=0, second=0, microsecond=0)
         .timestamp() * 1000
     )

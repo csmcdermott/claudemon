@@ -44,7 +44,29 @@
   </div>
 </div>
 
-<section>
+<section id="today-summary" class="hidden">
+  <div id="today-date-label" class="today-date hidden"></div>
+  <div class="today-grid">
+    <div class="today-metric">
+      <div class="today-val" id="today-tasks">—</div>
+      <div class="today-lbl">Tasks</div>
+    </div>
+    <div class="today-metric">
+      <div class="today-val" id="today-queries">—</div>
+      <div class="today-lbl">Queries</div>
+    </div>
+    <div class="today-metric">
+      <div class="today-val" id="today-tpq">—</div>
+      <div class="today-lbl">Tok / query</div>
+    </div>
+    <div class="today-metric">
+      <div class="today-val" id="today-tpt">—</div>
+      <div class="today-lbl">Tok / task</div>
+    </div>
+  </div>
+</section>
+
+<section class="chart-section">
   <div class="sec-hdr">
     <div class="sec-title">Daily tokens + cache hit %</div>
     <div class="legend">
@@ -57,7 +79,7 @@
   <div class="chart-wrap"><canvas id="token-chart"></canvas></div>
 </section>
 
-<section>
+<section class="chart-section">
   <div class="sec-hdr">
     <div class="sec-title">Queries + tokens/query</div>
     <div class="legend">
@@ -69,7 +91,7 @@
   <div class="chart-wrap"><canvas id="query-chart"></canvas></div>
 </section>
 
-<section>
+<section class="chart-section">
   <div class="sec-hdr">
     <div class="sec-title">Tasks &amp; queries</div>
     <div class="legend">

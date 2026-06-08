@@ -99,7 +99,10 @@ class ClaudemonApp(rumps.App):
         self._status.set_button(btn)
 
     def _on_status_click(self) -> None:
-        self._popover.toggle(self._nsapp.nsstatusitem.button())
+        try:
+            self._popover.toggle(self._nsapp.nsstatusitem.button())
+        except Exception:
+            logging.exception("status click error")
 
     def _on_jsonl_change(self, path: Path) -> None:
         index_file(
