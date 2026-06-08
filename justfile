@@ -1,5 +1,11 @@
 venv := ".venv/bin"
 
+# Create venv and install all dependencies (run once after cloning)
+setup:
+	python3 -m venv .venv
+	{{venv}}/pip install --upgrade pip
+	{{venv}}/pip install -e ".[dev]"
+
 lint:
 	{{venv}}/ruff check claudemon/ tests/
 
