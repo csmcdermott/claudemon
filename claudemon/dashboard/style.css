@@ -122,3 +122,25 @@ footer {
 }
 .footer-stat { font-size: 12px; color: #777; }
 #quit-btn { font-size: 13px; color: #777; background: none; border: none; cursor: pointer; }
+
+/* Dashed legend line indicator (p50) */
+.leg-line.leg-dashed {
+  background: none;
+  border-bottom: 2px dashed;
+  height: 0;
+  width: 12px;
+}
+
+/* Sessions list: show ~4 rows, scroll to reveal more */
+#sessions-list {
+  max-height: 188px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.12) transparent;
+}
+#sessions-list::-webkit-scrollbar { width: 4px; }
+#sessions-list::-webkit-scrollbar-track { background: transparent; }
+#sessions-list::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.12);
+  border-radius: 2px;
+}

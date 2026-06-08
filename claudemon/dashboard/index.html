@@ -79,16 +79,9 @@
   <div class="chart-wrap"><canvas id="token-chart"></canvas></div>
 </section>
 
-<section class="chart-section">
-  <div class="sec-hdr">
-    <div class="sec-title">Queries + tokens/query</div>
-    <div class="legend">
-      <div class="leg"><div class="leg-dot" style="background:rgba(251,146,60,0.8)"></div>queries</div>
-      <div class="leg"><div class="leg-line" style="background:#fcd34d"></div>tok/query</div>
-    </div>
-  </div>
-  <div class="axis-labels"><div class="axis-lbl">← queries</div><div class="axis-lbl">tok/query →</div></div>
-  <div class="chart-wrap"><canvas id="query-chart"></canvas></div>
+<section>
+  <div class="sec-title" style="margin-bottom:4px">Recent sessions</div>
+  <div id="sessions-list"></div>
 </section>
 
 <section class="chart-section">
@@ -103,11 +96,37 @@
         </div>
         tasks
       </div>
-      <div class="leg"><div class="leg-line" style="background:#fcd34d"></div>tok/task</div>
+      <div class="leg"><div class="leg-line leg-dashed" style="border-color:#fcd34d"></div>p50 tok</div>
+      <div class="leg"><div class="leg-line" style="background:#f87171"></div>top tok</div>
     </div>
   </div>
   <div class="axis-labels"><div class="axis-lbl">← queries</div><div class="axis-lbl">tok/task →</div></div>
   <div class="chart-wrap tall"><canvas id="task-chart"></canvas></div>
+</section>
+
+<section class="chart-section">
+  <div class="sec-hdr">
+    <div class="sec-title">Queries by token volume</div>
+    <div class="legend">
+      <div class="leg">
+        <div style="display:flex;gap:2px">
+          <div class="leg-dot" style="background:rgba(167,139,250,0.8)"></div>
+          <div class="leg-dot" style="background:rgba(56,189,248,0.8)"></div>
+          <div class="leg-dot" style="background:rgba(52,211,153,0.8)"></div>
+        </div>
+        queries
+      </div>
+      <div class="leg"><div class="leg-line leg-dashed" style="border-color:#fcd34d"></div>p50 tok</div>
+      <div class="leg"><div class="leg-line" style="background:#f87171"></div>top tok</div>
+    </div>
+  </div>
+  <div class="axis-labels"><div class="axis-lbl">← tokens</div><div class="axis-lbl">tok/query →</div></div>
+  <div class="chart-wrap tall"><canvas id="query-chart"></canvas></div>
+</section>
+
+<section>
+  <div class="sec-title" style="margin-bottom:6px">Model breakdown</div>
+  <div id="models-list"></div>
 </section>
 
 <section>
@@ -117,16 +136,6 @@
   </div>
   <div class="budget-track"><div class="budget-fill" id="budget-fill" style="width:0%"></div></div>
   <div class="budget-sub">Personal soft limit · edit in settings</div>
-</section>
-
-<section>
-  <div class="sec-title" style="margin-bottom:6px">Model breakdown</div>
-  <div id="models-list"></div>
-</section>
-
-<section>
-  <div class="sec-title" style="margin-bottom:4px">Recent sessions</div>
-  <div id="sessions-list"></div>
 </section>
 
 <footer>
