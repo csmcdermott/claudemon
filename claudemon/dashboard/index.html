@@ -18,11 +18,26 @@
 <div class="header">
   <h1>claudemon</h1>
   <div class="tabs">
-    <button class="tab" data-range="today">Today</button>
+    <button class="tab" data-range="today">12H</button>
     <button class="tab active" data-range="7d">7d</button>
     <button class="tab" data-range="30d">30d</button>
     <button class="tab" data-range="all">All</button>
+    <button class="tab" id="custom-tab">Custom</button>
   </div>
+</div>
+<div id="custom-picker">
+  <div class="picker-row">
+    <div class="picker-field">
+      <label for="custom-start">From</label>
+      <input type="datetime-local" id="custom-start" step="3600">
+    </div>
+    <div class="picker-field">
+      <label for="custom-end">To</label>
+      <input type="datetime-local" id="custom-end" step="3600">
+    </div>
+    <button id="custom-apply">Apply</button>
+  </div>
+  <div id="custom-error" class="picker-error"></div>
 </div>
 
 <div class="stats">
