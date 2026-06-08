@@ -4,17 +4,17 @@ import signal
 import sqlite3
 import threading
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+
+import claudemon.db as db
 
 
 def _tz_offset_ms() -> int:
     """Local UTC offset in ms, DST-aware (e.g. -25_200_000 for UTC-7)."""
     return int(datetime.now().astimezone().utcoffset().total_seconds() * 1000)
-
-import claudemon.db as db
 
 
 def _range_to_timestamps(range_str: str) -> tuple[int, int]:
