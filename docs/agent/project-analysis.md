@@ -5,7 +5,7 @@
 | **Project name** | claudemon |
 | **Purpose** | macOS menu bar app to monitor Claude Code usage in real time — token counts, cache hit rates, query/task analytics, active session state |
 | **Target release** | v1.0 (personal use) |
-| **Last updated** | 2026-06-07 |
+| **Last updated** | 2026-06-07 (implementation complete) |
 
 ## Tech Stack
 
@@ -95,9 +95,11 @@ GET  /api/tasks?range=...
 GET  /api/sessions?range=...&limit=5&active=false
 GET  /api/config
 POST /api/config
+POST /api/quit   → sends SIGTERM to process (used by dashboard Quit button)
 ```
 
 Full spec: `docs/superpowers/specs/2026-06-07-claudemon-design.md`
+Implementation plan: `docs/superpowers/plans/2026-06-07-claudemon.md`
 
 **Error shape:** HTTP 500 with `{"error": "message"}` JSON body.
 
@@ -107,9 +109,21 @@ Full spec: `docs/superpowers/specs/2026-06-07-claudemon-design.md`
 | --- | --- | --- |
 | 2026-06-07 | Distribution | NSPopover + WKWebView requires app bundle or entitlements for distribution; dev via `python app.py` works fine |
 | 2026-06-07 | Task detection | Heuristic-based; very long uninterrupted sessions may produce unexpectedly large tasks |
+| 2026-06-07 | SQLite reads | Read functions (query_stats etc.) don't hold _LOCK. Concurrent read+write is safe in WAL mode for a single user but not fully serialised. |
+| 2026-06-07 | Query chart | queries/day is approximated by distributing total queries proportional to daily output token share — not exact per-day counts |
+
+## Implementation Notes
+
+- **venv required**: System Python is Homebrew-managed and externally locked. All `just` recipes use `.venv/bin/` prefixes. Always `source .venv/bin/activate` or use `just` to run tools.
+- **macOS-only modules excluded from coverage**: `app.py`, `popover.py`, `statusitem.py`, `watcher.py` are omitted from coverage measurement (require macOS event loop). Covered modules target ≥80%.
+- **session_id from JSONL content, not filename**: The indexer reads `sessionId` from JSONL records; the filename stem is the fallback. In production they always match (Claude Code names files by UUID), but tests use fixture filenames like `abc123.jsonl`.
+- **`/api/quit` fires SIGTERM in a daemon thread**: Ensures the HTTP response is sent before the process exits.
 
 ## Recently Changed Areas
 
 | Date | File / Area | What changed |
 | --- | --- | --- |
-| 2026-06-07 | Entire project | Initial design spec written; implementation not yet started |
+| 2026-06-07 | All | Full implementation complete — all 10 tasks delivered, 36 tests, 87% coverage |
+| 2026-06-07 | db.py | Added thread lock, idempotent INSERT OR IGNORE, session range lower-bound filter, FK enforcement |
+| 2026-06-07 | indexer.py | Fixed query_id fallback (was :0:, now :1:), fixed isSidechain guard |
+| 2026-06-07 | server.py | Fixed port-0 TOCTOU, POST path parsing (self.path → urlparse), GET / error handling |
