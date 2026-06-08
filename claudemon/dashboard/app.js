@@ -528,9 +528,12 @@ function renderBanner(activeSessions) {
     `${elapsed} · ${fmt(s.input_tokens)} in / ${fmt(s.output_tokens)} out · ${s.task_count} tasks`;
 }
 
-function renderFooter(stats) {
+function renderFooter(stats, config) {
   document.getElementById('footer-stat').textContent =
     `${stats.sessions} sessions · ${stats.queries} queries`;
+  if (config?._version) {
+    document.getElementById('footer-version').textContent = `v${config._version}`;
+  }
 }
 
 let currentRange = '7d';
@@ -558,7 +561,7 @@ async function refresh() {
   renderBudget(stats, config);
   renderModels(stats);
   renderSessions(sessions);
-  renderFooter(stats);
+  renderFooter(stats, config);
 }
 
 async function refreshBanner() {

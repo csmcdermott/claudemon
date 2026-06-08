@@ -101,6 +101,13 @@ def test_config_get(server):
     assert data["weekly_output_budget"] == 8000000
 
 
+def test_config_includes_version(server):
+    data = _get(server + "/api/config")
+    assert "_version" in data
+    assert isinstance(data["_version"], str)
+    assert data["_version"].count(".") == 2  # semver x.y.z
+
+
 def test_config_post(server):
     body = json.dumps({"weekly_output_budget": 5000000}).encode()
     req = urllib.request.Request(

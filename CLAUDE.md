@@ -23,10 +23,32 @@ Use `just` to run development tasks:
 just lint        # Run linters
 just test        # Run test suite
 just coverage    # Run tests with coverage reporting
-just install-pre-push  # Install the pre-push hook
+just install-hooks     # Install pre-commit + pre-push hooks (run once after cloning)
 ```
 
 The pre-push hook (`scripts/pre-push.sh`) blocks pushes when lint, coverage, or tests fail.
+
+## Versioning
+
+This project uses **semantic versioning**. Version is defined in two places that must always stay in sync:
+- `pyproject.toml` — packaging metadata
+- `claudemon/_version.py` — runtime source of truth (imported by the server, displayed in the dashboard footer)
+
+**Never edit these files manually.** Always use the bump scripts:
+
+```bash
+just bump-patch   # 0.2.0 → 0.2.1  (auto-run by pre-commit hook — you rarely need this)
+just bump-minor   # 0.2.0 → 0.3.0  (run before committing a new feature)
+just bump-major   # 0.2.0 → 1.0.0  (run before committing a breaking change)
+```
+
+**Rules:**
+- The **pre-commit hook** auto-bumps the patch version on every commit — no manual action needed for fixes/tweaks.
+- Before committing a **new feature**, run `just bump-minor` first (the hook will then bump patch on top — that's fine, it's just one extra patch).
+- Before a **breaking change**, run `just bump-major` first.
+- Merge commits are skipped by the hook.
+
+The version is displayed in the dashboard footer and served via `/api/config` as `_version`.
 
 
 ## Architectural Notes

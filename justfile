@@ -19,6 +19,21 @@ install-pre-push:
 	cp scripts/pre-push.sh .git/hooks/pre-push
 	chmod +x .git/hooks/pre-push
 
+install-pre-commit:
+	cp scripts/pre-commit.sh .git/hooks/pre-commit
+	chmod +x .git/hooks/pre-commit
+
+install-hooks: install-pre-push install-pre-commit
+
+bump-patch:
+	python3 scripts/bump_version.py patch
+
+bump-minor:
+	python3 scripts/bump_version.py minor
+
+bump-major:
+	python3 scripts/bump_version.py major
+
 # Build claudemon.app bundle (output: dist/claudemon.app)
 build:
 	rm -rf build dist

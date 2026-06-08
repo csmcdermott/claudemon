@@ -123,6 +123,14 @@ Implementation plan: `docs/superpowers/plans/2026-06-07-claudemon.md`
 | 2026-06-07 | SQLite reads | Read functions (query_stats etc.) don't hold _LOCK. Concurrent read+write is safe for a single user with in-memory DB but not fully serialised. |
 | 2026-06-08 | Startup time | Full re-index on every launch. Currently ~100-200ms for ~370 sessions; will grow linearly with history. |
 
+## Versioning
+
+Version is defined in **two files that must stay in sync** — always use `just bump-patch/minor/major` (never edit manually):
+- `pyproject.toml` — packaging metadata
+- `claudemon/_version.py` — runtime import (`from claudemon._version import __version__`)
+
+The pre-commit hook (`scripts/pre-commit.sh`) auto-bumps patch on every commit. Run `just bump-minor` before committing a new feature. The version is served via `/api/config` as `_version` and displayed in the dashboard footer.
+
 ## Implementation Notes
 
 - **venv required**: System Python is Homebrew-managed and externally locked. All `just` recipes use `.venv/bin/` prefixes. Always `source .venv/bin/activate` or use `just` to run tools.

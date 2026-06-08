@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import claudemon.db as db
+from claudemon._version import __version__ as _APP_VERSION
 
 
 def _tz_offset_ms() -> int:
@@ -111,10 +112,8 @@ def _make_handler(
                     self._json(result)
 
                 elif parsed.path == "/api/config":
-                    if config_path.exists():
-                        self._json(json.loads(config_path.read_text()))
-                    else:
-                        self._json({})
+                    config = json.loads(config_path.read_text()) if config_path.exists() else {}
+                    self._json({**config, "_version": _APP_VERSION})
 
                 else:
                     self._json_error(404, "not found")
