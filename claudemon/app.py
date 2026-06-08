@@ -1,9 +1,10 @@
 import json
 import logging
+import sys
 from pathlib import Path
 
 import rumps
-from Foundation import NSObject
+from Foundation import NSBundle, NSObject
 from rumps import events as rumps_events
 
 import claudemon.db as db
@@ -30,9 +31,14 @@ logging.basicConfig(level=logging.INFO)
 CLAUDE_PROJECTS_DIR = Path.home() / ".claude" / "projects"
 CLAUDE_SESSIONS_DIR = Path.home() / ".claude" / "sessions"
 CLAUDEMON_DIR = Path.home() / ".claudemon"
-DB_PATH = CLAUDEMON_DIR / "claudemon.db"
 CONFIG_PATH = CLAUDEMON_DIR / "config.json"
-DASHBOARD_DIR = Path(__file__).parent / "dashboard"
+
+# When frozen (py2app .app bundle), dashboard lives in Contents/Resources/.
+# In development it's a sibling directory of this file.
+if getattr(sys, "frozen", False):
+    DASHBOARD_DIR = Path(NSBundle.mainBundle().resourcePath()) / "dashboard"
+else:
+    DASHBOARD_DIR = Path(__file__).parent / "dashboard"
 
 
 def _load_config() -> dict:
@@ -51,7 +57,7 @@ class ClaudemonApp(rumps.App):
 
         super().__init__("claudemon", title="◆ — ○", quit_button=None)
         self._config = _load_config()
-        self._conn = db.connect(DB_PATH)
+        self._conn = db.connect()
 
         # Full index on startup
         logging.info("Indexing existing sessions…")

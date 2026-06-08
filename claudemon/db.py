@@ -1,11 +1,8 @@
 import sqlite3
 import threading
 import time
-from pathlib import Path
 
 _LOCK = threading.Lock()
-
-DB_PATH = Path.home() / ".claudemon" / "claudemon.db"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sessions (
@@ -48,11 +45,9 @@ CREATE INDEX IF NOT EXISTS idx_messages_query   ON messages(query_id);
 """
 
 
-def connect(path: Path = DB_PATH) -> sqlite3.Connection:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(path), check_same_thread=False)
+def connect() -> sqlite3.Connection:
+    conn = sqlite3.connect(":memory:", check_same_thread=False)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(SCHEMA)
     conn.execute("PRAGMA foreign_keys = ON")
     return conn

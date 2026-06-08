@@ -5,7 +5,7 @@
 | **Project name** | claudemon |
 | **Purpose** | macOS menu bar app to monitor Claude Code usage in real time — token counts, cache hit rates, query/task analytics, active session state |
 | **Target release** | v1.0 (personal use) |
-| **Last updated** | 2026-06-07 (dashboard polish + drill-down navigation) |
+| **Last updated** | 2026-06-08 (in-memory DB, .app bundle distribution) |
 
 ## Tech Stack
 
@@ -16,8 +16,9 @@
 | Dashboard UI | HTML / CSS / Chart.js | Fetches JSON from local server |
 | Local HTTP server | Python stdlib http.server | Random localhost port; 127.0.0.1 only |
 | File watching | watchdog | Watches ~/.claude/projects/**/*.jsonl and ~/.claude/sessions/*.json |
-| Data index | SQLite (stdlib sqlite3) | Persistent; incremental via byte-offset cursors in file_cursors table |
+| Data index | SQLite in-memory (stdlib sqlite3) | Ephemeral; full re-index on startup, incremental within session via in-memory file_cursors |
 | Config | JSON | ~/.claudemon/config.json |
+| Distribution | py2app | Builds `dist/claudemon.app` via `just build`; `just install-app` copies to /Applications/ |
 | Testing | pytest | >80% coverage required |
 
 ## Architecture Overview
@@ -31,12 +32,13 @@ macOS layer (rumps + PyObjC)  →  Data layer (watchdog + indexer + SQLite)  →
 
 **Key design decisions:**
 - All data is local — no Anthropic API calls required
-- SQLite as processed index with byte-offset cursors for incremental O(new bytes) indexing
+- **In-memory SQLite**: `db.connect()` always returns `":memory:"`. Full re-index on every startup; byte-offset cursors tracked in-memory for incremental O(new bytes) indexing during the session. No persistent DB file — eliminates DB corruption and stale data.
 - Task boundary detection uses multi-signal heuristic: 30-min gap OR git branch change OR /clear command OR new session
 - NSPanel (not NSPopover) for resizable popup — requires `orderFrontRegardless()` + `activateIgnoringOtherApps_` for LSUIElement apps; panel is lazy-created on first click
 - Local HTTP server allows full Chart.js dashboard inside WKWebView
 - All time bucketing uses local-timezone offsets (`_tz_offset_ms()` in server.py, `_local_trunc()` in db.py) so day/hour chart labels match the user's clock
 - "Today" view shows stat counters instead of charts; `day:TIMESTAMP` range enables drill-down from multi-day chart click
+- **py2app bundle**: `setup.py` with `LSUIElement: True` plist. `app.py` uses `sys.frozen` + `NSBundle.mainBundle().resourcePath()` to find dashboard in bundled mode. `just build` → `dist/claudemon.app`; `just install-app` → /Applications/.
 
 ## Directory Structure
 
@@ -55,6 +57,7 @@ claudemon/
 ├── docs/
 │   ├── agent/           # This file + lessons.md
 │   └── superpowers/specs/2026-06-07-claudemon-design.md
+├── setup.py             # py2app bundle configuration
 ├── scripts/
 ├── CLAUDE.md
 ├── justfile
@@ -111,10 +114,10 @@ Implementation plan: `docs/superpowers/plans/2026-06-07-claudemon.md`
 
 | Date | Area | Description |
 | --- | --- | --- |
-| 2026-06-07 | Distribution | NSPanel + WKWebView requires app bundle or entitlements for distribution; dev via `python app.py` works fine |
+| 2026-06-08 | Distribution | .app bundle is unsigned — first launch requires right-click → Open (Gatekeeper). For wider distribution, code signing + notarization would be needed. |
 | 2026-06-07 | Task detection | Heuristic-based; very long uninterrupted sessions may produce unexpectedly large tasks |
-| 2026-06-07 | SQLite reads | Read functions (query_stats etc.) don't hold _LOCK. Concurrent read+write is safe in WAL mode for a single user but not fully serialised. |
-| 2026-06-07 | DB corruption | If DB was built with early buggy indexer code, task/query counts may be wrong. Fix: `rm ~/.claudemon/claudemon.db` and restart to trigger full re-index. |
+| 2026-06-07 | SQLite reads | Read functions (query_stats etc.) don't hold _LOCK. Concurrent read+write is safe for a single user with in-memory DB but not fully serialised. |
+| 2026-06-08 | Startup time | Full re-index on every launch. Currently ~100-200ms for ~370 sessions; will grow linearly with history. |
 
 ## Implementation Notes
 
@@ -122,25 +125,24 @@ Implementation plan: `docs/superpowers/plans/2026-06-07-claudemon.md`
 - **macOS-only modules excluded from coverage**: `app.py`, `popover.py`, `statusitem.py`, `watcher.py` are omitted from coverage measurement (require macOS event loop). Covered modules target ≥80%.
 - **session_id from JSONL content, not filename**: The indexer reads `sessionId` from JSONL records; the filename stem is the fallback. In production they always match (Claude Code names files by UUID), but tests use fixture filenames like `abc123.jsonl`.
 - **`/api/quit` fires SIGTERM in a daemon thread**: Ensures the HTTP response is sent before the process exits.
-
-## Implementation Notes
-
-- **venv required**: System Python is Homebrew-managed and externally locked. All `just` recipes use `.venv/bin/` prefixes.
-- **macOS-only modules excluded from coverage**: `app.py`, `popover.py`, `statusitem.py`, `watcher.py` omitted from coverage (require macOS event loop). Covered modules target ≥80%.
-- **session_id from JSONL content, not filename**: Indexer reads `sessionId` from records; filename stem is fallback.
-- **`/api/quit` fires SIGTERM in a daemon thread**: Ensures HTTP response is sent before the process exits.
+- **In-memory DB**: `db.connect()` always returns `sqlite3.connect(":memory:")`. No `DB_PATH` constant exists. The `file_cursors` table lives in the same in-memory DB — byte-offset cursors survive within a session but are discarded on quit, triggering a full re-index on next launch.
 - **Timezone bucketing**: `_tz_offset_ms()` in server.py = `datetime.now().astimezone().utcoffset().total_seconds() * 1000`. `_local_trunc(bucket_ms, tz_offset_ms)` in db.py applies it as `((ts+tz)/bucket)*bucket - tz`. Both `query_timeline` and `query_tasks` accept `tz_offset_ms`.
 - **Day drill-down**: Clicking a chart bar sets `currentRange = "day:<local_midnight_ms>"`. JS stores last padded timeline/tasks in `_paddedTimeline`/`_paddedTasks` module vars for index-based lookup in the click handler.
 - **Gap filling**: `padTimeline(timeline, range)` and `padTasks(tasksData, range)` in app.js generate all expected day buckets using `d.setHours(0,0,0,0)` in the browser's local timezone, merging with real data. Works because server and browser share the same timezone (local app).
+- **py2app bundle**: `setup.py` subclasses `py2app.build_app.py2app` to clear `install_requires` before `finalize_options` (py2app 0.28 rejects it; setuptools populates it from pyproject.toml). Dashboard path in bundled mode: `Path(NSBundle.mainBundle().resourcePath()) / "dashboard"` (guarded by `sys.frozen`). `just setup` installs py2app into the venv. First launch of unsigned bundle requires right-click → Open.
 
 ## Recently Changed Areas
 
 | Date | File / Area | What changed |
 | --- | --- | --- |
+| 2026-06-08 | db.py | Removed `DB_PATH`; `connect()` always returns `":memory:"` (no persistent file) |
+| 2026-06-08 | app.py | Removed `DB_PATH`; added `sys.frozen` guard for bundled dashboard path; imports `NSBundle` |
+| 2026-06-08 | setup.py (new) | py2app bundle config; subclasses build command to clear install_requires |
+| 2026-06-08 | justfile | Added `build` and `install-app` recipes |
+| 2026-06-08 | pyproject.toml | Added `py2app>=0.28` to dev deps |
+| 2026-06-08 | .gitignore | Added `build/` and `dist/` |
+| 2026-06-08 | tests/conftest.py | `conn` fixture now calls `db.connect()` instead of constructing connection manually |
 | 2026-06-07 | All | Full implementation complete — all 10 tasks delivered, 36 tests, 87% coverage |
-| 2026-06-07 | db.py | Added thread lock, idempotent INSERT OR IGNORE, session range lower-bound filter, FK enforcement |
-| 2026-06-07 | indexer.py | Fixed query_id fallback (was :0:, now :1:), fixed isSidechain guard |
-| 2026-06-07 | server.py | Fixed port-0 TOCTOU, POST path parsing (self.path → urlparse), GET / error handling |
 | 2026-06-07 | popover.py | NSPopover → NSPanel (resizable); lazy init; `orderFrontRegardless` + `activateIgnoringOtherApps_` |
 | 2026-06-07 | server.py + db.py | Local-timezone bucketing via `_tz_offset_ms()` + `_local_trunc()`; `day:X` drill-down range |
 | 2026-06-07 | dashboard/ | Today = stat counters; 7d/30d gap-filling; chart click → day drill-down; hourly x-axis for today; session-title task labels |

@@ -18,3 +18,14 @@ coverage:
 install-pre-push:
 	cp scripts/pre-push.sh .git/hooks/pre-push
 	chmod +x .git/hooks/pre-push
+
+# Build claudemon.app bundle (output: dist/claudemon.app)
+build:
+	rm -rf build dist
+	{{venv}}/python setup.py py2app
+
+# Build and copy to /Applications (requires build first)
+install-app: build
+	rm -rf /Applications/claudemon.app
+	cp -r dist/claudemon.app /Applications/claudemon.app
+	@echo "Installed to /Applications/claudemon.app"
