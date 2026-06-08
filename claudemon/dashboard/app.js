@@ -57,8 +57,8 @@ const api = {
     return r.json();
   },
   stats(range)    { return api.get(`/api/stats?range=${range}`); },
-  timeline(range) { return api.get(`/api/timeline?range=${range}&bucket=${range === 'today' ? '1h' : '1d'}`); },
-  tasks(range)    { return api.get(`/api/tasks?range=${range}`); },
+  timeline(range) { return api.get(`/api/timeline?range=${range}&bucket=${isDayView(range) ? '1h' : '1d'}`); }, // isDayView hoisted
+  tasks(range)    { return api.get(`/api/tasks?range=${range}&bucket=${isDayView(range) ? '1h' : '1d'}`); },    // isDayView hoisted
   queries(range) {
     const bucket = isDayView(range) ? '1h' : '1d'; // isDayView is hoisted (function declaration below)
     return api.get(`/api/queries?range=${range}&bucket=${bucket}`);
@@ -136,21 +136,35 @@ function initCharts() {
 
 function bucketLabel(ts, range) {
   const d = new Date(ts);
-  if (range === 'today') {
-    return d.toLocaleTimeString(undefined, { hour: 'numeric' });   // "2 PM"
+  if (isDayView(range)) {
+    return d.toLocaleTimeString(undefined, { hour: 'numeric' });
   }
   if (range === '30d' || range === 'all') {
-    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); // "Jun 7"
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   }
-  return d.toLocaleDateString(undefined, { weekday: 'short' });    // "Mon"
+  return d.toLocaleDateString(undefined, { weekday: 'short' });
 }
 
 // ── Gap filling ──────────────────────────────────────────────────────────────
 
 function padTimeline(timeline, range) {
+  if (isDayView(range)) {
+    const dayStart = range === 'today'
+      ? (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); })()
+      : parseInt(range.split(':')[1]);
+    const map = new Map(timeline.map(b => [b.date, b]));
+    const result = [];
+    for (let h = 0; h < 24; h++) {
+      const ts = dayStart + h * 3_600_000;
+      result.push(map.get(ts) ?? {
+        date: ts, input_tokens: 0, output_tokens: 0,
+        cache_hit_rate: 0, queries: 0, tokens_per_query: 0,
+      });
+    }
+    return result;
+  }
   const days = range === '30d' ? 30 : range === '7d' ? 7 : null;
   if (!days) return timeline;
-
   const map = new Map(timeline.map(b => [b.date, b]));
   const result = [];
   const now = new Date();
@@ -168,9 +182,23 @@ function padTimeline(timeline, range) {
 }
 
 function padTasks(tasksData, range) {
+  if (isDayView(range)) {
+    const dayStart = range === 'today'
+      ? (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); })()
+      : parseInt(range.split(':')[1]);
+    const map = new Map(tasksData.map(d => [d.date, d]));
+    const result = [];
+    for (let h = 0; h < 24; h++) {
+      const ts = dayStart + h * 3_600_000;
+      result.push(map.get(ts) ?? {
+        date: ts, tasks: [],
+        avg_tokens_per_task: 0, p50_tokens_per_task: 0, max_tokens_per_task: 0,
+      });
+    }
+    return result;
+  }
   const days = range === '30d' ? 30 : range === '7d' ? 7 : null;
   if (!days) return tasksData;
-
   const map = new Map(tasksData.map(d => [d.date, d]));
   const result = [];
   const now = new Date();
@@ -179,7 +207,10 @@ function padTasks(tasksData, range) {
     d.setDate(d.getDate() - i);
     d.setHours(0, 0, 0, 0);
     const ts = d.getTime();
-    result.push(map.get(ts) ?? { date: ts, tasks: [], avg_tokens_per_task: 0, p50_tokens_per_task: 0, max_tokens_per_task: 0 });
+    result.push(map.get(ts) ?? {
+      date: ts, tasks: [],
+      avg_tokens_per_task: 0, p50_tokens_per_task: 0, max_tokens_per_task: 0,
+    });
   }
   return result;
 }
@@ -224,8 +255,6 @@ function isDayView(range) {
 
 function setViewMode(range) {
   const day = isDayView(range);
-  document.querySelectorAll('.chart-section').forEach(s =>
-    s.classList.toggle('hidden', day));
   document.getElementById('today-summary').classList.toggle('hidden', !day);
 }
 
@@ -472,11 +501,10 @@ async function refresh() {
 
   if (isDayView(currentRange)) {
     renderTodaySummary(stats, currentRange);
-  } else {
-    renderTokenChart(timeline, currentRange);
-    renderQueryChart(queriesData, currentRange);
-    renderTaskChart(tasks, currentRange);
   }
+  renderTokenChart(timeline, currentRange);
+  renderTaskChart(tasks, currentRange);
+  renderQueryChart(queriesData, currentRange);
 
   renderBudget(stats, config);
   renderModels(stats);
