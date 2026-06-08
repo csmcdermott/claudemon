@@ -51,6 +51,34 @@ function fmtDuration(ms) {
   return `${s}s`;
 }
 
+function toDatetimeLocal(d) {
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:00`;
+}
+
+function updateCustomTabLabel() {
+  const btn = document.getElementById('custom-tab');
+  if (!currentRange.startsWith('custom:')) {
+    btn.textContent = 'Custom';
+    return;
+  }
+  const parts = currentRange.split(':');
+  const startMs = parseInt(parts[1]);
+  const endMs = parseInt(parts[2]);
+  const start = new Date(startMs);
+  const end = new Date(endMs);
+  if (endMs - startMs <= 24 * 3_600_000) {
+    const date = start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    const s = start.toLocaleTimeString(undefined, { hour: 'numeric' });
+    const e = end.toLocaleTimeString(undefined, { hour: 'numeric' });
+    btn.textContent = `${date} ${s}–${e}`;
+  } else {
+    const s = start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    const e = end.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    btn.textContent = `${s}–${e}`;
+  }
+}
+
 const api = {
   async get(path) {
     const r = await fetch(path);
@@ -546,9 +574,55 @@ document.addEventListener('DOMContentLoaded', () => {
   setInterval(refresh, 30_000);
   setInterval(refreshBanner, 5_000);
 
+  const customTab = document.getElementById('custom-tab');
+  const customPicker = document.getElementById('custom-picker');
+  const customStart = document.getElementById('custom-start');
+  const customEnd = document.getElementById('custom-end');
+
+  customTab.addEventListener('click', () => {
+    if (customPicker.style.display !== 'none') {
+      customPicker.style.display = 'none';
+      return;
+    }
+    const now = new Date();
+    now.setMinutes(0, 0, 0);
+    const sevenAgo = new Date(now.getTime() - 7 * 86_400_000);
+    sevenAgo.setHours(0, 0, 0, 0);
+    customStart.value = toDatetimeLocal(sevenAgo);
+    customEnd.value = toDatetimeLocal(now);
+    document.getElementById('custom-error').textContent = '';
+    customPicker.style.display = '';
+  });
+
+  document.getElementById('custom-apply').addEventListener('click', () => {
+    const start = new Date(customStart.value).getTime();
+    const end = new Date(customEnd.value).getTime();
+    if (isNaN(start) || isNaN(end) || end <= start) {
+      document.getElementById('custom-error').textContent = 'End must be after start';
+      return;
+    }
+    document.getElementById('custom-error').textContent = '';
+    currentRange = `custom:${start}:${end}`;
+    customPicker.style.display = 'none';
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    customTab.classList.add('active');
+    updateCustomTabLabel();
+    refresh();
+  });
+
+  document.addEventListener('click', e => {
+    if (customPicker.style.display === 'none') return;
+    if (!customPicker.contains(e.target) && e.target !== customTab) {
+      customPicker.style.display = 'none';
+    }
+  });
+
   document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
+      if (!tab.dataset.range) return;
       currentRange = tab.dataset.range;
+      customPicker.style.display = 'none';
+      document.getElementById('custom-tab').textContent = 'Custom';
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
       refresh();
