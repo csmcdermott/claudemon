@@ -51,7 +51,24 @@ def _make_handler(
                 return
 
             if not parsed.path.startswith("/api/"):
-                self._json_error(404, "not found")
+                # Serve static dashboard files (style.css, app.js, etc.)
+                rel = parsed.path.lstrip("/")
+                candidate = (dashboard_dir / rel).resolve()
+                try:
+                    candidate.relative_to(dashboard_dir.resolve())
+                except ValueError:
+                    self._json_error(403, "forbidden")
+                    return
+                if candidate.is_file():
+                    _TYPES = {
+                        ".css": "text/css",
+                        ".js": "application/javascript",
+                        ".html": "text/html; charset=utf-8",
+                    }
+                    ct = _TYPES.get(candidate.suffix, "application/octet-stream")
+                    self._respond(200, ct, candidate.read_bytes())
+                else:
+                    self._json_error(404, "not found")
                 return
 
             range_str = qs.get("range", ["7d"])[0]

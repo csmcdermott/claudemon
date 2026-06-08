@@ -4,8 +4,18 @@ import time
 from pathlib import Path
 
 import rumps
+from AppKit import NSColor, NSMutableAttributedString, NSOperationQueue
 
 import claudemon.db as db
+
+# NSForegroundColorAttributeName is just the string "NSColor" in the ObjC runtime
+_FG_COLOR = "NSColor"
+
+_DOT_COLORS = {
+    "none":    NSColor.colorWithSRGBRed_green_blue_alpha_(0.20, 0.20, 0.25, 0.5),  # muted
+    "idle":    NSColor.colorWithSRGBRed_green_blue_alpha_(0.98, 0.62, 0.04, 1.0),  # amber
+    "working": NSColor.colorWithSRGBRed_green_blue_alpha_(0.13, 0.77, 0.37, 1.0),  # green
+}
 
 _CLAUDE_SESSIONS_DIR = Path.home() / ".claude" / "sessions"
 
@@ -38,7 +48,13 @@ class StatusItem:
         self._tokens = 0
         self._pulse_thread: threading.Thread | None = None
         self._running = False
+        self._button = None  # NSStatusBarButton; set via set_button() after run()
         self._update()
+
+    def set_button(self, button) -> None:
+        """Called after rumps initialises the status bar (before_start event)."""
+        self._button = button
+        self._refresh_title()
 
     def on_jsonl_change(self, _path=None) -> None:
         """Called by watcher when JSONL files change."""
@@ -60,9 +76,26 @@ class StatusItem:
         self._refresh_title()
 
     def _refresh_title(self) -> None:
-        dot = {"none": "○", "idle": "●", "working": "●"}[self._state]
         tok = self._fmt_tokens(self._tokens)
-        self._app.title = f"◆ {tok} {dot}"
+        if self._button is not None:
+            self._set_attributed_title(tok, self._state)
+        else:
+            # Fallback before the button is available (during __init__)
+            dot = {"none": "○", "idle": "●", "working": "●"}[self._state]
+            self._app.title = f"◆ {tok} {dot}"
+
+    def _set_attributed_title(self, tok: str, state: str) -> None:
+        """Apply a colored dot via NSAttributedString on the main thread."""
+        text = f"◆ {tok} ●"
+        attrs = NSMutableAttributedString.alloc().initWithString_(text)
+        dot_range = (len(text) - 1, 1)  # last character: the dot
+        attrs.addAttribute_value_range_(_FG_COLOR, _DOT_COLORS[state], dot_range)
+        button = self._button
+
+        def _apply():
+            button.setAttributedTitle_(attrs)
+
+        NSOperationQueue.mainQueue().addOperationWithBlock_(_apply)
 
     def _manage_pulse(self, state: str) -> None:
         if state == "working" and self._pulse_thread is None:
@@ -75,13 +108,26 @@ class StatusItem:
             self._refresh_title()
 
     def _pulse_loop(self) -> None:
-        """Alternate the dot character to simulate pulsing in the menu bar text."""
-        chars = ["●", "○"]
+        """Pulse the green dot by alternating full/half opacity."""
+        opacities = [1.0, 0.35]
         i = 0
         while self._running and self._state == "working":
-            dot = chars[i % 2]
             tok = self._fmt_tokens(self._tokens)
-            self._app.title = f"◆ {tok} {dot}"
+            opacity = opacities[i % 2]
+            if self._button is not None:
+                text = f"◆ {tok} ●"
+                attrs = NSMutableAttributedString.alloc().initWithString_(text)
+                color = NSColor.colorWithSRGBRed_green_blue_alpha_(0.13, 0.77, 0.37, opacity)
+                attrs.addAttribute_value_range_(_FG_COLOR, color, (len(text) - 1, 1))
+                button = self._button
+
+                def _apply(a=attrs):
+                    button.setAttributedTitle_(a)
+
+                NSOperationQueue.mainQueue().addOperationWithBlock_(_apply)
+            else:
+                dot = "●" if opacity > 0.5 else "○"
+                self._app.title = f"◆ {tok} {dot}"
             i += 1
             time.sleep(0.6)
 

@@ -95,6 +95,8 @@ class ClaudemonApp(rumps.App):
         # Remove the dropdown menu so the action fires on direct click.
         # Quit is available via the dashboard's Quit button (POST /api/quit).
         self._nsapp.nsstatusitem.setMenu_(None)
+        # Hand the button to StatusItem so it can use setAttributedTitle_ for colors.
+        self._status.set_button(btn)
 
     def _on_status_click(self) -> None:
         self._popover.toggle(self._nsapp.nsstatusitem.button())
