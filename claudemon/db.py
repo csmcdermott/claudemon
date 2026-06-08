@@ -306,6 +306,64 @@ def query_tasks(
     return result
 
 
+def query_query_breakdown(
+    conn: sqlite3.Connection,
+    range_ts: tuple[int, int],
+    bucket: str = "1d",
+    tz_offset_ms: int = 0,
+    top_n: int = 10,
+) -> list[dict]:
+    """Return per-bucket top-N query token breakdown for stacked chart.
+
+    Each bucket dict: {date, queries[{query_id, total_tokens}], other_count,
+                       other_tokens, p50_tpq, max_tpq}
+    Queries sorted descending by total_tokens; excess collapsed into other_*.
+    p50/max computed over all queries in the bucket, not just top_n.
+    """
+    start_ms, end_ms = range_ts
+    bucket_ms = 3_600_000 if bucket == "1h" else 86_400_000
+    trunc = _local_trunc(bucket_ms, tz_offset_ms)
+
+    rows = conn.execute(f"""
+        SELECT
+            {trunc}                               AS bucket_ts,
+            query_id,
+            SUM(input_tokens + output_tokens)     AS total_tokens
+        FROM messages
+        WHERE timestamp BETWEEN ? AND ?
+        GROUP BY bucket_ts, query_id
+        ORDER BY bucket_ts, total_tokens DESC
+    """, (start_ms, end_ms)).fetchall()
+
+    raw: dict[int, list] = {}
+    for r in rows:
+        ts = r["bucket_ts"]
+        if ts not in raw:
+            raw[ts] = []
+        raw[ts].append({"query_id": r["query_id"], "total_tokens": r["total_tokens"]})
+
+    result = []
+    for ts in sorted(raw):
+        all_q = raw[ts]
+        all_tok = [q["total_tokens"] for q in all_q]
+        n = len(all_tok)
+        sorted_tok = sorted(all_tok)
+        p50 = sorted_tok[(n - 1) // 2] if n > 0 else 0
+        max_tpq = sorted_tok[-1] if n > 0 else 0
+
+        top = all_q[:top_n]
+        rest = all_q[top_n:]
+        result.append({
+            "date": ts,
+            "queries": top,
+            "other_count": len(rest),
+            "other_tokens": sum(q["total_tokens"] for q in rest),
+            "p50_tpq": p50,
+            "max_tpq": max_tpq,
+        })
+    return result
+
+
 def query_sessions(
     conn: sqlite3.Connection,
     range_ts: tuple[int, int],

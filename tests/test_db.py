@@ -142,3 +142,55 @@ def test_query_tasks_hourly_bucket(conn):
     toks_by_max = {b["max_tokens_per_task"] for b in result}
     assert toks_by_p50 == {30, 70}
     assert toks_by_max == {30, 70}
+
+
+def test_query_query_breakdown_top_n(conn):
+    db.upsert_session(conn, "s1", "proj", None, 0, 99_000_000_000, "main")
+    ts_base = 1749340800000
+    # 12 queries with output tokens 10, 20, ..., 120
+    for i in range(12):
+        db.insert_message(
+            conn, "s1", "s1:1", f"s1:1:{i + 1}",
+            ts_base + i * 1000, "claude-sonnet-4-6", 0, (i + 1) * 10, 0, 0,
+        )
+    result = db.query_query_breakdown(conn, (ts_base, ts_base + 20_000))
+    assert len(result) == 1
+    b = result[0]
+    assert len(b["queries"]) == 10
+    assert b["other_count"] == 2
+    assert b["other_tokens"] == 30          # 10 + 20
+    assert b["queries"][0]["total_tokens"] == 120  # sorted descending
+    # sorted all: [10,20,...,120], n=12, p50 idx=(12-1)//2=5, value=60
+    assert b["p50_tpq"] == 60
+    assert b["max_tpq"] == 120
+
+
+def test_query_query_breakdown_fewer_than_top_n(conn):
+    db.upsert_session(conn, "s1", "proj", None, 0, 99_000_000_000, "main")
+    ts_base = 1749340800000
+    for i, toks in enumerate([100, 200, 300]):
+        db.insert_message(
+            conn, "s1", "s1:1", f"s1:1:{i + 1}",
+            ts_base + i * 1000, "claude-sonnet-4-6", 0, toks, 0, 0,
+        )
+    result = db.query_query_breakdown(conn, (ts_base, ts_base + 10_000))
+    assert len(result) == 1
+    b = result[0]
+    assert len(b["queries"]) == 3
+    assert b["other_count"] == 0
+    assert b["other_tokens"] == 0
+    # sorted: [100,200,300], p50 idx=1, value=200
+    assert b["p50_tpq"] == 200
+    assert b["max_tpq"] == 300
+
+
+def test_query_query_breakdown_hourly_bucket(conn):
+    db.upsert_session(conn, "s1", "proj", None, 0, 99_000_000_000, "main")
+    hour1 = 1749340800000
+    hour2 = hour1 + 3_600_000
+    db.insert_message(conn, "s1", "s1:1", "s1:1:1", hour1 + 100, "claude-sonnet-4-6", 0, 50, 0, 0)
+    db.insert_message(conn, "s1", "s1:1", "s1:1:2", hour2 + 100, "claude-sonnet-4-6", 0, 80, 0, 0)
+    result = db.query_query_breakdown(conn, (hour1, hour2 + 3_600_000), bucket="1h")
+    assert len(result) == 2
+    dates = {b["date"] for b in result}
+    assert len(dates) == 2
