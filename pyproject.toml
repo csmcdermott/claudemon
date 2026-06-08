@@ -32,3 +32,11 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
+
+[tool.coverage.run]
+omit = [
+    "claudemon/app.py",
+    "claudemon/popover.py",
+    "claudemon/statusitem.py",
+    "claudemon/watcher.py",
+]
