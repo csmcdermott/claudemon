@@ -60,7 +60,7 @@ const api = {
   timeline(range) { return api.get(`/api/timeline?range=${range}&bucket=${range === 'today' ? '1h' : '1d'}`); },
   tasks(range)    { return api.get(`/api/tasks?range=${range}`); },
   queries(range) {
-    const bucket = isDayView(range) ? '1h' : '1d';
+    const bucket = isDayView(range) ? '1h' : '1d'; // isDayView is hoisted (function declaration below)
     return api.get(`/api/queries?range=${range}&bucket=${bucket}`);
   },
   sessions(range) { return api.get(`/api/sessions?range=${range}&limit=10`); },
@@ -282,6 +282,7 @@ function renderQueryChart(queriesData, range) {
   const stackDatasets = Array.from({ length: maxQ }, (_, i) => ({
     type: 'bar',
     label: `Query ${i + 1}`,
+    queryIndex: i,
     data: padded.map(b => b.queries?.[i]?.total_tokens ?? null),
     backgroundColor: PALETTE[i % PALETTE.length],
     borderColor: 'rgba(0,0,0,0.12)', borderWidth: 0.5,
@@ -308,7 +309,7 @@ function renderQueryChart(queriesData, range) {
         return ` +${b.other_count} other: ${fmt(item.raw)} tokens`;
       }
       const b = padded[item.dataIndex];
-      const q = b.queries?.[item.datasetIndex];
+      const q = b.queries?.[item.dataset.queryIndex];
       return ` ${q?.query_id ?? item.dataset.label}: ${fmt(item.raw)} tokens`;
     },
   };
