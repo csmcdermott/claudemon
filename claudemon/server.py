@@ -97,7 +97,15 @@ def _make_handler(
                     self._json(db.query_timeline(conn, range_ts, bucket, _tz_offset_ms()))
 
                 elif parsed.path == "/api/tasks":
-                    self._json(db.query_tasks(conn, range_ts, tz_offset_ms=_tz_offset_ms()))
+                    bucket = qs.get("bucket", ["1d"])[0]
+                    result = db.query_tasks(
+                        conn, range_ts, bucket=bucket, tz_offset_ms=_tz_offset_ms()
+                    )
+                    self._json(result)
+
+                elif parsed.path == "/api/queries":
+                    bucket = qs.get("bucket", ["1d"])[0]
+                    self._json(db.query_query_breakdown(conn, range_ts, bucket, _tz_offset_ms()))
 
                 elif parsed.path == "/api/sessions":
                     limit = int(qs.get("limit", ["5"])[0])

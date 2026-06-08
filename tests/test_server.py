@@ -109,3 +109,35 @@ def test_unknown_route_404(server):
     with pytest.raises(urllib.error.HTTPError) as exc_info:
         urllib.request.urlopen(server + "/api/nonexistent")
     assert exc_info.value.code == 404
+
+
+def test_queries_endpoint(server):
+    data = _get(server + "/api/queries?range=all&bucket=1d")
+    assert isinstance(data, list)
+    assert len(data) >= 1
+    b = data[0]
+    assert "queries" in b
+    assert isinstance(b["queries"], list)
+    assert "other_count" in b
+    assert "other_tokens" in b
+    assert "p50_tpq" in b
+    assert "max_tpq" in b
+    # seeded_conn has 3 queries total, all fit within top_n=10
+    total_q = sum(len(bucket["queries"]) for bucket in data)
+    assert total_q == 3
+
+
+def test_tasks_endpoint_has_p50_max(server):
+    data = _get(server + "/api/tasks?range=all&bucket=1d")
+    assert isinstance(data, list)
+    assert len(data) >= 1
+    for b in data:
+        assert "p50_tokens_per_task" in b
+        assert "max_tokens_per_task" in b
+        assert b["max_tokens_per_task"] >= b["p50_tokens_per_task"]
+
+
+def test_queries_endpoint_default_bucket(server):
+    """bucket param is optional — omitting it must not 500."""
+    data = _get(server + "/api/queries?range=all")
+    assert isinstance(data, list)
