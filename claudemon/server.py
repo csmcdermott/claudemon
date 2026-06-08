@@ -19,15 +19,9 @@ def _tz_offset_ms() -> int:
 
 def _range_to_timestamps(range_str: str) -> tuple[int, int]:
     now = int(time.time() * 1000)
-    # Use local midnight so "today" matches the user's calendar day, not UTC.
-    today_start = int(
-        datetime.now()
-        .replace(hour=0, minute=0, second=0, microsecond=0)
-        .timestamp() * 1000
-    )
     match range_str:
         case "today":
-            return today_start, now
+            return now - 12 * 3600 * 1000, now
         case "7d":
             return now - 7 * 24 * 3600 * 1000, now
         case "30d":
@@ -40,6 +34,9 @@ def _range_to_timestamps(range_str: str) -> tuple[int, int]:
             )
             day_end_ms = int((day_start_dt + timedelta(days=1)).timestamp() * 1000) - 1
             return day_start_ms, day_end_ms
+        case s if s.startswith("custom:"):
+            parts = s.split(":")
+            return int(parts[1]), int(parts[2])
         case _:
             return 0, now
 

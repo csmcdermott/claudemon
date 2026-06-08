@@ -5,7 +5,20 @@ import urllib.request
 import pytest
 
 import claudemon.db as db
-from claudemon.server import start_server
+from claudemon.server import _range_to_timestamps, start_server
+
+
+def test_range_custom_timestamps():
+    start, end = _range_to_timestamps("custom:1000000:2000000")
+    assert start == 1_000_000
+    assert end == 2_000_000
+
+
+def test_range_custom_via_endpoint(server):
+    # custom range spanning the seeded data should return a result
+    now = int(time.time() * 1000)
+    data = _get(server + f"/api/stats?range=custom:0:{now}")
+    assert data["sessions"] == 1
 
 
 @pytest.fixture
