@@ -4,6 +4,7 @@ from pathlib import Path
 
 import rumps
 from Foundation import NSObject
+from rumps import events as rumps_events
 
 import claudemon.db as db
 from claudemon.indexer import index_all, index_file
@@ -81,16 +82,22 @@ class ClaudemonApp(rumps.App):
         )
         self._watcher.start()
 
-        # Wire left-click on the status item button directly to the popover toggle.
-        # setMenu_(None) prevents the dropdown; the button action fires instead.
-        # Quit is available via the dashboard's Quit button (POST /api/quit).
+        # nsstatusitem doesn't exist until run() → initializeStatusBar().
+        # Register to wire the button action once it's available.
+        rumps_events.before_start.register(self._wire_button_click)
+
+    def _wire_button_click(self) -> None:
+        """Called by rumps after initializeStatusBar() — nsstatusitem exists here."""
         self._click_handler = _ClickHandler.alloc().init()
-        self._status_item.button().setAction_("handleClick:")
-        self._status_item.button().setTarget_(self._click_handler)
-        self._status_item.setMenu_(None)
+        btn = self._nsapp.nsstatusitem.button()
+        btn.setAction_("handleClick:")
+        btn.setTarget_(self._click_handler)
+        # Remove the dropdown menu so the action fires on direct click.
+        # Quit is available via the dashboard's Quit button (POST /api/quit).
+        self._nsapp.nsstatusitem.setMenu_(None)
 
     def _on_status_click(self) -> None:
-        self._popover.toggle(self._status_item.button())
+        self._popover.toggle(self._nsapp.nsstatusitem.button())
 
     def _on_jsonl_change(self, path: Path) -> None:
         index_file(
