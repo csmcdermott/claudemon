@@ -147,11 +147,18 @@ function bucketLabel(ts, range) {
 
 // ── Gap filling ──────────────────────────────────────────────────────────────
 
+function dayViewStart(range) {
+  if (range === 'today') {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  }
+  return parseInt(range.split(':')[1]);
+}
+
 function padTimeline(timeline, range) {
   if (isDayView(range)) {
-    const dayStart = range === 'today'
-      ? (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); })()
-      : parseInt(range.split(':')[1]);
+    const dayStart = dayViewStart(range);
     const map = new Map(timeline.map(b => [b.date, b]));
     const result = [];
     for (let h = 0; h < 24; h++) {
@@ -183,9 +190,7 @@ function padTimeline(timeline, range) {
 
 function padTasks(tasksData, range) {
   if (isDayView(range)) {
-    const dayStart = range === 'today'
-      ? (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); })()
-      : parseInt(range.split(':')[1]);
+    const dayStart = dayViewStart(range);
     const map = new Map(tasksData.map(d => [d.date, d]));
     const result = [];
     for (let h = 0; h < 24; h++) {
@@ -217,9 +222,7 @@ function padTasks(tasksData, range) {
 
 function padQueries(queriesData, range) {
   if (isDayView(range)) {
-    const dayStart = range === 'today'
-      ? (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); })()
-      : parseInt(range.split(':')[1]);
+    const dayStart = dayViewStart(range);
     const map = new Map(queriesData.map(b => [b.date, b]));
     const result = [];
     for (let h = 0; h < 24; h++) {
