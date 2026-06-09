@@ -52,6 +52,81 @@ function fmtDuration(ms) {
   return `${s}s`;
 }
 
+function fmtResetsAt(isoStr) {
+  const d = new Date(isoStr);
+  const secs = (d - Date.now()) / 1000;
+  if (secs <= 0) return 'resetting now';
+  if (secs < 3600) {
+    return `resets in ${Math.max(1, Math.floor(secs / 60))}m`;
+  }
+  if (secs < 86400) {
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    return m > 0 ? `resets in ${h}h ${m}m` : `resets in ${h}h`;
+  }
+  const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const pad = n => String(n).padStart(2, '0');
+  return `resets ${DAYS[d.getDay()]} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function colorClass(pct) {
+  if (pct < 50) return 'usage-green';
+  if (pct < 80) return 'usage-yellow';
+  if (pct < 95) return 'usage-orange';
+  return 'usage-red';
+}
+
+function renderUsageStrip(data) {
+  const strip = document.getElementById('usage-strip');
+  if (!data.available) {
+    const div = document.createElement('div');
+    div.className = 'usage-error';
+    div.textContent = `⚠ ${data.error ?? 'Rate limits unavailable'}`;
+    strip.replaceChildren(div);
+    return;
+  }
+  const COLOR_CLASSES = ['usage-green', 'usage-yellow', 'usage-orange', 'usage-red'];
+
+  function updateBar(pctElId, fillElId, resetElId, bucket) {
+    const pctEl   = document.getElementById(pctElId);
+    const fillEl  = document.getElementById(fillElId);
+    const resetEl = document.getElementById(resetElId);
+    if (!pctEl || !fillEl || !resetEl) return;
+    if (!bucket || bucket.utilization == null) {
+      pctEl.textContent = '—';
+      fillEl.style.width = '0';
+      fillEl.className = 'usage-fill';
+      pctEl.className = 'usage-pct';
+      resetEl.textContent = '';
+      return;
+    }
+    const pct = Math.round(bucket.utilization);
+    const cls = colorClass(pct);
+    pctEl.textContent = pct + '%';
+    COLOR_CLASSES.forEach(c => { pctEl.classList.remove(c); fillEl.classList.remove(c); });
+    pctEl.classList.add(cls);
+    fillEl.classList.add(cls);
+    fillEl.style.width = Math.min(100, pct) + '%';
+    resetEl.textContent = bucket.resets_at ? fmtResetsAt(bucket.resets_at) : '';
+  }
+
+  updateBar('usage-5h-pct', 'usage-5h-fill', 'usage-5h-reset', data.five_hour);
+  updateBar('usage-7d-pct', 'usage-7d-fill', 'usage-7d-reset', data.seven_day);
+}
+
+async function fetchUsage() {
+  try {
+    const data = await fetch('/api/usage').then(r => r.json());
+    renderUsageStrip(data);
+  } catch (_) {
+    const strip = document.getElementById('usage-strip');
+    const div = document.createElement('div');
+    div.className = 'usage-error';
+    div.textContent = '⚠ Could not reach local server';
+    strip.replaceChildren(div);
+  }
+}
+
 function toDatetimeLocal(d) {
   const pad = n => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:00`;
@@ -582,9 +657,11 @@ document.addEventListener('DOMContentLoaded', () => {
   initCharts();
   refresh();
   refreshBanner();
+  fetchUsage();
 
   setInterval(refresh, 30_000);
   setInterval(refreshBanner, 5_000);
+  setInterval(fetchUsage, 120_000);
 
   const customTab = document.getElementById('custom-tab');
   const customPicker = document.getElementById('custom-picker');
