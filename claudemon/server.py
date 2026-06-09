@@ -4,13 +4,33 @@ import signal
 import sqlite3
 import threading
 import time
+import urllib.error
+import urllib.request
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import claudemon.db as db
+from claudemon import keychain
 from claudemon._version import __version__ as _APP_VERSION
+
+_usage_cache: dict = {"data": None, "fetched_at": None}
+_USAGE_LOCK = threading.Lock()
+
+
+def _call_usage_api(token: str) -> dict:
+    """Call Anthropic OAuth usage API. Returns parsed JSON dict."""
+    req = urllib.request.Request(
+        "https://api.anthropic.com/api/oauth/usage",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "anthropic-beta": "oauth-2025-04-20",
+            "Accept": "application/json",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        return json.loads(resp.read().decode())
 
 
 def _tz_offset_ms() -> int:
@@ -114,6 +134,50 @@ def _make_handler(
                 elif parsed.path == "/api/config":
                     config = json.loads(config_path.read_text()) if config_path.exists() else {}
                     self._json({**config, "_version": _APP_VERSION})
+
+                elif parsed.path == "/api/usage":
+                    with _USAGE_LOCK:
+                        now = time.time()
+                        cached_ok = (
+                            _usage_cache["fetched_at"] is not None
+                            and now - _usage_cache["fetched_at"] < 120
+                        )
+                        if cached_ok:
+                            self._json(_usage_cache["data"])
+                            return
+                    try:
+                        token = keychain.read_access_token()
+                        raw = _call_usage_api(token)
+                        result = {
+                            "available": True,
+                            "five_hour": raw.get("five_hour"),
+                            "seven_day": raw.get("seven_day"),
+                        }
+                        with _USAGE_LOCK:
+                            _usage_cache["data"] = result
+                            _usage_cache["fetched_at"] = time.time()
+                        self._json(result)
+                    except keychain.KeychainError:
+                        self._json({
+                            "available": False,
+                            "error": (
+                                "Token not found — run any claude command"
+                                " to refresh credentials"
+                            ),
+                        })
+                    except urllib.error.HTTPError as e:
+                        msg = (
+                            "Token expired — run any claude command to refresh"
+                            if e.code == 401
+                            else f"Usage API error (HTTP {e.code})"
+                        )
+                        self._json({"available": False, "error": msg})
+                    except (urllib.error.URLError, OSError):
+                        self._json({
+                            "available": False,
+                            "error": "Network error — check your connection",
+                        })
+                    return
 
                 else:
                     self._json_error(404, "not found")

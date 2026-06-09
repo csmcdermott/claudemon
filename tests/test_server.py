@@ -1,10 +1,13 @@
 import json
 import time
 import urllib.request
+from unittest.mock import patch
 
 import pytest
 
 import claudemon.db as db
+import claudemon.server as srv
+from claudemon.keychain import KeychainError
 from claudemon.server import _range_to_timestamps, start_server
 
 
@@ -161,3 +164,74 @@ def test_queries_endpoint_default_bucket(server):
     """bucket param is optional — omitting it must not 500."""
     data = _get(server + "/api/queries?range=all")
     assert isinstance(data, list)
+
+
+# ── /api/usage tests ─────────────────────────────────────────────────────────
+
+_MOCK_API_RESPONSE = {
+    "five_hour": {"utilization": 42.0, "resets_at": "2026-06-09T18:00:00Z"},
+    "seven_day":  {"utilization": 67.0, "resets_at": "2026-06-13T00:00:00Z"},
+}
+
+
+def _reset_usage_cache():
+    srv._usage_cache["data"] = None
+    srv._usage_cache["fetched_at"] = None
+
+
+def test_usage_returns_data(server):
+    _reset_usage_cache()
+    with patch("claudemon.keychain.read_access_token", return_value="tok"), \
+         patch("claudemon.server._call_usage_api", return_value=_MOCK_API_RESPONSE):
+        data = _get(server + "/api/usage")
+    assert data["available"] is True
+    assert data["five_hour"]["utilization"] == 42.0
+    assert data["seven_day"]["utilization"] == 67.0
+
+
+def test_usage_cache_hit(server):
+    _reset_usage_cache()
+    with patch("claudemon.keychain.read_access_token", return_value="tok") as mock_kc, \
+         patch("claudemon.server._call_usage_api", return_value=_MOCK_API_RESPONSE):
+        _get(server + "/api/usage")
+        _get(server + "/api/usage")
+    assert mock_kc.call_count == 1  # fetched once, second call used cache
+
+
+def test_usage_cache_miss_after_ttl(server):
+    _reset_usage_cache()
+    with patch("claudemon.keychain.read_access_token", return_value="tok"), \
+         patch("claudemon.server._call_usage_api", return_value=_MOCK_API_RESPONSE):
+        _get(server + "/api/usage")
+    # Expire the cache manually
+    srv._usage_cache["fetched_at"] = time.time() - 121
+    with patch("claudemon.keychain.read_access_token", return_value="tok") as mock_kc2, \
+         patch("claudemon.server._call_usage_api", return_value=_MOCK_API_RESPONSE):
+        _get(server + "/api/usage")
+    assert mock_kc2.call_count == 1  # re-fetched after TTL
+
+
+def test_usage_keychain_error(server):
+    _reset_usage_cache()
+    with patch("claudemon.keychain.read_access_token", side_effect=KeychainError("not found")):
+        data = _get(server + "/api/usage")
+    assert data["available"] is False
+    assert "Token not found" in data["error"]
+
+
+def test_usage_401(server):
+    _reset_usage_cache()
+    import urllib.error
+    from io import BytesIO
+    http_err = urllib.error.HTTPError(
+        url="https://api.anthropic.com/api/oauth/usage",
+        code=401,
+        msg="Unauthorized",
+        hdrs={},
+        fp=BytesIO(b""),
+    )
+    with patch("claudemon.keychain.read_access_token", return_value="tok"), \
+         patch("claudemon.server._call_usage_api", side_effect=http_err):
+        data = _get(server + "/api/usage")
+    assert data["available"] is False
+    assert "expired" in data["error"]
