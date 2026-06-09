@@ -6,6 +6,26 @@ const PALETTE = [
   'rgba(168,85,247,0.82)',  'rgba(14,165,233,0.82)',
 ];
 
+const COLOR_CLASSES = ['usage-green', 'usage-yellow', 'usage-orange', 'usage-red'];
+
+const _USAGE_STRIP_HTML = `<div class="usage-bar-group">
+    <div class="usage-row">
+      <span class="usage-lbl">5-hour session</span>
+      <span class="usage-pct" id="usage-5h-pct">—</span>
+    </div>
+    <div class="usage-track"><div class="usage-fill" id="usage-5h-fill"></div></div>
+    <div class="usage-reset" id="usage-5h-reset"></div>
+  </div>
+  <div class="usage-divider"></div>
+  <div class="usage-bar-group">
+    <div class="usage-row">
+      <span class="usage-lbl">7-day weekly</span>
+      <span class="usage-pct" id="usage-7d-pct">—</span>
+    </div>
+    <div class="usage-track"><div class="usage-fill" id="usage-7d-fill"></div></div>
+    <div class="usage-reset" id="usage-7d-reset"></div>
+  </div>`;
+
 const CHART_DEFAULTS = {
   responsive: true,
   maintainAspectRatio: false,
@@ -54,6 +74,7 @@ function fmtDuration(ms) {
 
 function fmtResetsAt(isoStr) {
   const d = new Date(isoStr);
+  if (isNaN(d)) return '';
   const secs = (d - Date.now()) / 1000;
   if (secs <= 0) return 'resetting now';
   if (secs < 3600) {
@@ -78,14 +99,18 @@ function colorClass(pct) {
 
 function renderUsageStrip(data) {
   const strip = document.getElementById('usage-strip');
+  if (!strip) return;
   if (!data.available) {
-    const div = document.createElement('div');
-    div.className = 'usage-error';
-    div.textContent = `⚠ ${data.error ?? 'Rate limits unavailable'}`;
-    strip.replaceChildren(div);
+    const err = document.createElement('div');
+    err.className = 'usage-error';
+    err.textContent = `⚠ ${data.error ?? 'Rate limits unavailable'}`;
+    strip.replaceChildren(err);
     return;
   }
-  const COLOR_CLASSES = ['usage-green', 'usage-yellow', 'usage-orange', 'usage-red'];
+  // Restore bar structure if a prior error replaced it
+  if (!document.getElementById('usage-5h-pct')) {
+    strip.innerHTML = _USAGE_STRIP_HTML;
+  }
 
   function updateBar(pctElId, fillElId, resetElId, bucket) {
     const pctEl   = document.getElementById(pctElId);
@@ -94,7 +119,7 @@ function renderUsageStrip(data) {
     if (!pctEl || !fillEl || !resetEl) return;
     if (!bucket || bucket.utilization == null) {
       pctEl.textContent = '—';
-      fillEl.style.width = '0';
+      fillEl.style.width = '0%';
       fillEl.className = 'usage-fill';
       pctEl.className = 'usage-pct';
       resetEl.textContent = '';
@@ -120,6 +145,7 @@ async function fetchUsage() {
     renderUsageStrip(data);
   } catch (_) {
     const strip = document.getElementById('usage-strip');
+    if (!strip) return;
     const div = document.createElement('div');
     div.className = 'usage-error';
     div.textContent = '⚠ Could not reach local server';
