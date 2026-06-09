@@ -197,3 +197,70 @@ footer {
   margin-top: 5px;
   min-height: 14px;
 }
+
+/* ── Usage strip ─────────────────────────────────────────────────────────── */
+#usage-strip {
+  display: flex;
+  gap: 16px;
+  align-items: stretch;
+  padding: 10px 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.usage-bar-group { flex: 1; }
+
+.usage-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 4px;
+}
+
+.usage-lbl { font-size: 11px; color: #888; }
+
+.usage-pct {
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-track {
+  height: 5px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.usage-fill {
+  height: 100%;
+  width: 0;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+.usage-reset {
+  font-size: 10px;
+  color: #555;
+  margin-top: 3px;
+  min-height: 14px;
+}
+
+.usage-divider {
+  width: 1px;
+  background: rgba(255,255,255,0.06);
+  align-self: stretch;
+  flex-shrink: 0;
+}
+
+.usage-error {
+  font-size: 11px;
+  color: #666;
+  padding: 2px 0;
+  align-self: center;
+}
+
+/* Color states for .usage-fill and .usage-pct */
+.usage-green  { color: #34d399; background: #34d399; }
+.usage-yellow { color: #f59e0b; background: #f59e0b; }
+.usage-orange { color: #f97316; background: #f97316; }
+.usage-red    { color: #ef4444; background: #ef4444; }
