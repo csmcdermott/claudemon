@@ -1,5 +1,6 @@
 import json
 import os
+import pwd
 import subprocess
 
 
@@ -13,16 +14,26 @@ def read_access_token() -> str:
     Raises KeychainError if the Keychain item is missing or unparseable.
     Never logs or exposes the token value.
     """
-    result = subprocess.run(
-        [
-            "security", "find-generic-password",
-            "-s", "Claude Code-credentials",
-            "-a", os.getlogin(),
-            "-w",
-        ],
-        capture_output=True,
-        text=True,
-    )
+    try:
+        username = pwd.getpwuid(os.getuid()).pw_name
+    except OSError:
+        raise KeychainError("not found")
+
+    try:
+        result = subprocess.run(
+            [
+                "security", "find-generic-password",
+                "-s", "Claude Code-credentials",
+                "-a", username,
+                "-w",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except subprocess.TimeoutExpired:
+        raise KeychainError("timed out")
+
     if result.returncode != 0:
         raise KeychainError("not found")
 
