@@ -142,9 +142,10 @@ def _make_handler(
                             _usage_cache["fetched_at"] is not None
                             and now - _usage_cache["fetched_at"] < 120
                         )
-                        if cached_ok:
-                            self._json(_usage_cache["data"])
-                            return
+                        cached_data = _usage_cache["data"] if cached_ok else None
+                    if cached_data is not None:
+                        self._json(cached_data)
+                        return
                     try:
                         token = keychain.read_access_token()
                         raw = _call_usage_api(token)

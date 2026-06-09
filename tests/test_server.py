@@ -192,10 +192,11 @@ def test_usage_returns_data(server):
 def test_usage_cache_hit(server):
     _reset_usage_cache()
     with patch("claudemon.keychain.read_access_token", return_value="tok") as mock_kc, \
-         patch("claudemon.server._call_usage_api", return_value=_MOCK_API_RESPONSE):
+         patch("claudemon.server._call_usage_api", return_value=_MOCK_API_RESPONSE) as mock_api:
         _get(server + "/api/usage")
         _get(server + "/api/usage")
-    assert mock_kc.call_count == 1  # fetched once, second call used cache
+    assert mock_kc.call_count == 1   # keychain read once
+    assert mock_api.call_count == 1  # API called once, not twice
 
 
 def test_usage_cache_miss_after_ttl(server):
@@ -235,3 +236,32 @@ def test_usage_401(server):
         data = _get(server + "/api/usage")
     assert data["available"] is False
     assert "expired" in data["error"]
+
+
+def test_usage_network_error(server):
+    _reset_usage_cache()
+    import urllib.error
+    with patch("claudemon.keychain.read_access_token", return_value="tok"), \
+         patch("claudemon.server._call_usage_api",
+               side_effect=urllib.error.URLError("connection refused")):
+        data = _get(server + "/api/usage")
+    assert data["available"] is False
+    assert "Network error" in data["error"]
+
+
+def test_usage_non_401_http_error(server):
+    _reset_usage_cache()
+    import urllib.error
+    from io import BytesIO
+    http_err = urllib.error.HTTPError(
+        url="https://api.anthropic.com/api/oauth/usage",
+        code=429,
+        msg="Too Many Requests",
+        hdrs={},
+        fp=BytesIO(b""),
+    )
+    with patch("claudemon.keychain.read_access_token", return_value="tok"), \
+         patch("claudemon.server._call_usage_api", side_effect=http_err):
+        data = _get(server + "/api/usage")
+    assert data["available"] is False
+    assert "429" in data["error"]
