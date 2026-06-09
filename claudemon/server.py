@@ -140,7 +140,7 @@ def _make_handler(
                         now = time.time()
                         cached_ok = (
                             _usage_cache["fetched_at"] is not None
-                            and now - _usage_cache["fetched_at"] < 120
+                            and now - _usage_cache["fetched_at"] < 115
                         )
                         cached_data = _usage_cache["data"] if cached_ok else None
                     if cached_data is not None:
@@ -173,6 +173,11 @@ def _make_handler(
                             else f"Usage API error (HTTP {e.code})"
                         )
                         self._json({"available": False, "error": msg})
+                    except json.JSONDecodeError:
+                        self._json({
+                            "available": False,
+                            "error": "Usage API error — unexpected response format",
+                        })
                     except (urllib.error.URLError, OSError):
                         self._json({
                             "available": False,

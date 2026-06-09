@@ -74,7 +74,8 @@ claudemon/
 | File watcher | claudemon/watcher.py | watchdog observer dispatching events to indexer + statusitem |
 | Indexer | claudemon/indexer.py | Parses JSONL deltas, assigns task_ids, writes to SQLite |
 | Database | claudemon/db.py | Schema (sessions, messages, file_cursors) + query API |
-| HTTP server | claudemon/server.py | /api/stats, /api/timeline, /api/tasks, /api/sessions, /api/config |
+| HTTP server | claudemon/server.py | /api/stats, /api/timeline, /api/tasks, /api/sessions, /api/config, /api/usage |
+| Keychain | claudemon/keychain.py | Reads Claude Code OAuth token from macOS Keychain via `security` CLI |
 
 ## Data Flow
 
@@ -99,6 +100,7 @@ GET  /api/timeline?range=...&bucket=1h|1d          ← returns queries + tokens_
 GET  /api/tasks?range=...&bucket=1h|1d             ← returns p50/max/avg tokens per task + per-bucket tasks list
 GET  /api/queries?range=...&bucket=1h|1d           ← returns top-10 queries by token volume + other + p50/max per bucket
 GET  /api/sessions?range=...&limit=10&active=false
+GET  /api/usage                                    ← live rate-limit utilization from Anthropic OAuth API; 115s cache
 GET  /api/config
 POST /api/config
 POST /api/quit   → sends SIGTERM to process (used by dashboard Quit button)
@@ -157,6 +159,11 @@ The pre-commit hook (`scripts/pre-commit.sh`) auto-bumps patch on every commit. 
 
 | Date | File / Area | What changed |
 | --- | --- | --- |
+| 2026-06-09 | claudemon/keychain.py (new) | Reads Claude Code OAuth token from macOS Keychain; `pwd.getpwuid` (not `os.getlogin`); timeout=5 |
+| 2026-06-09 | server.py | Added `/api/usage` route + `_usage_cache` (115s TTL) + `_call_usage_api()` |
+| 2026-06-09 | dashboard/index.html | Added `#usage-strip` compact bar between tabs and stats |
+| 2026-06-09 | dashboard/style.css | Added `.usage-*` classes + color state classes (green/yellow/orange/red) |
+| 2026-06-09 | dashboard/app.js | Added `fmtResetsAt`, `colorClass`, `renderUsageStrip`, `fetchUsage`; polls every 120s |
 | 2026-06-08 | popover.py | WKWebView now uses `nonPersistentDataStore` + `NSURLRequestReloadIgnoringLocalCacheData`; no stale cache across reinstalls |
 | 2026-06-08 | server.py | Added `Cache-Control: no-store` to all responses via `_respond` |
 | 2026-06-08 | dashboard/app.js | `SCALE_X` gains `type: 'category'`; `fmtHour` replaces `toLocaleTimeString`; `bucketLabel` uses day-of-month for day views, midnight-crossing date prefix for hour views; custom picker open uses `display='block'` |
