@@ -1,5 +1,8 @@
 import json
+import os
+import signal
 import time
+import urllib.error
 import urllib.request
 from unittest.mock import patch
 
@@ -45,11 +48,24 @@ def server(seeded_conn, tmp_path):
     dashboard_dir = tmp_path / "dashboard"
     dashboard_dir.mkdir()
     (dashboard_dir / "index.html").write_text("<html><body>dashboard</body></html>")
+    (dashboard_dir / "style.css").write_text("body { color: red; }")
+    (dashboard_dir / "app.js").write_text("console.log('hi');")
     config_path = tmp_path / "config.json"
     config_path.write_text('{"weekly_output_budget": 8000000, "task_gap_minutes": 30}')
     port = start_server(seeded_conn, config_path, dashboard_dir)
-    time.sleep(0.1)  # allow server thread to bind
-    yield f"http://127.0.0.1:{port}"
+    base = f"http://127.0.0.1:{port}"
+    # Poll until the server is responding (replaces fixed 100ms sleep).
+    deadline = time.time() + 2.0
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(base + "/", timeout=0.2) as r:
+                r.read()
+            break
+        except (urllib.error.URLError, OSError):
+            time.sleep(0.01)
+    else:
+        raise RuntimeError("server did not start within 2s")
+    yield base
 
 
 def _get(url: str) -> dict:
@@ -128,7 +144,6 @@ def test_config_post(server):
 
 
 def test_unknown_route_404(server):
-    import urllib.error
     with pytest.raises(urllib.error.HTTPError) as exc_info:
         urllib.request.urlopen(server + "/api/nonexistent")
     assert exc_info.value.code == 404
@@ -204,8 +219,8 @@ def test_usage_cache_miss_after_ttl(server):
     with patch("claudemon.keychain.read_access_token", return_value="tok"), \
          patch("claudemon.server._call_usage_api", return_value=_MOCK_API_RESPONSE):
         _get(server + "/api/usage")
-    # Expire the cache manually
-    srv._usage_cache["fetched_at"] = time.time() - 121
+    # Expire well beyond any plausible TTL — the test stays valid if TTL is later tuned.
+    srv._usage_cache["fetched_at"] = time.time() - 10_000
     with patch("claudemon.keychain.read_access_token", return_value="tok") as mock_kc2, \
          patch("claudemon.server._call_usage_api", return_value=_MOCK_API_RESPONSE):
         _get(server + "/api/usage")
@@ -222,7 +237,6 @@ def test_usage_keychain_error(server):
 
 def test_usage_401(server):
     _reset_usage_cache()
-    import urllib.error
     from io import BytesIO
     http_err = urllib.error.HTTPError(
         url="https://api.anthropic.com/api/oauth/usage",
@@ -240,7 +254,6 @@ def test_usage_401(server):
 
 def test_usage_network_error(server):
     _reset_usage_cache()
-    import urllib.error
     with patch("claudemon.keychain.read_access_token", return_value="tok"), \
          patch("claudemon.server._call_usage_api",
                side_effect=urllib.error.URLError("connection refused")):
@@ -251,7 +264,6 @@ def test_usage_network_error(server):
 
 def test_usage_non_401_http_error(server):
     _reset_usage_cache()
-    import urllib.error
     from io import BytesIO
     http_err = urllib.error.HTTPError(
         url="https://api.anthropic.com/api/oauth/usage",
@@ -265,3 +277,83 @@ def test_usage_non_401_http_error(server):
         data = _get(server + "/api/usage")
     assert data["available"] is False
     assert "429" in data["error"]
+
+
+def test_call_usage_api_constructs_correct_request():
+    """Verify the real HTTP request: URL, Bearer token, beta header, Accept, timeout.
+
+    Every other usage test mocks _call_usage_api itself, so this is the only
+    coverage of the actual urlopen call shape. Required by the OAuth endpoint.
+    """
+    captured = {}
+
+    class _MockResponse:
+        def __enter__(self): return self
+        def __exit__(self, *_): return False
+        def read(self): return b'{"five_hour": {"utilization": 1.0}, "seven_day": {}}'
+
+    def fake_urlopen(req, timeout):
+        captured["url"] = req.full_url
+        captured["authorization"] = req.get_header("Authorization")
+        captured["beta"] = req.get_header("Anthropic-beta")
+        captured["accept"] = req.get_header("Accept")
+        captured["timeout"] = timeout
+        return _MockResponse()
+
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        result = srv._call_usage_api("test-token")
+
+    assert captured["url"] == "https://api.anthropic.com/api/oauth/usage"
+    assert captured["authorization"] == "Bearer test-token"
+    assert captured["beta"] == "oauth-2025-04-20"
+    assert captured["accept"] == "application/json"
+    assert captured["timeout"] == 10
+    assert result == {"five_hour": {"utilization": 1.0}, "seven_day": {}}
+
+
+# ── Static file handler tests ────────────────────────────────────────────────
+
+
+def test_static_serves_css(server):
+    with urllib.request.urlopen(server + "/style.css") as r:
+        assert r.status == 200
+        assert r.headers["Content-Type"] == "text/css"
+        assert b"red" in r.read()
+
+
+def test_static_404_for_missing_file(server):
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        urllib.request.urlopen(server + "/does-not-exist.css")
+    assert exc_info.value.code == 404
+
+
+def test_static_403_for_path_traversal(server):
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        urllib.request.urlopen(server + "/../etc/passwd")
+    assert exc_info.value.code == 403
+
+
+# ── /api/quit test ───────────────────────────────────────────────────────────
+
+
+def test_quit_endpoint_sends_sigterm(server):
+    """POST /api/quit returns ok and schedules SIGTERM on current pid."""
+    called = {}
+
+    def fake_kill(pid, sig):
+        called["pid"] = pid
+        called["sig"] = sig
+
+    with patch("os.kill", side_effect=fake_kill):
+        req = urllib.request.Request(server + "/api/quit", method="POST", data=b"")
+        with urllib.request.urlopen(req) as r:
+            result = json.loads(r.read())
+        assert result == {"ok": True}
+
+        # Wait inside the patch context for the daemon thread to fire.
+        deadline = time.time() + 1.0
+        while time.time() < deadline and "pid" not in called:
+            time.sleep(0.01)
+
+        assert called.get("pid") == os.getpid()
+        assert called.get("sig") == signal.SIGTERM

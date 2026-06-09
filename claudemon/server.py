@@ -7,7 +7,7 @@ import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -31,6 +31,47 @@ def _call_usage_api(token: str) -> dict:
     )
     with urllib.request.urlopen(req, timeout=10) as resp:
         return json.loads(resp.read().decode())
+
+
+def _handle_usage() -> dict:
+    """Return /api/usage response dict. Success is cached 115s; errors are not."""
+    with _USAGE_LOCK:
+        now = time.time()
+        cached_ok = (
+            _usage_cache["fetched_at"] is not None
+            and now - _usage_cache["fetched_at"] < 115
+        )
+        cached_data = _usage_cache["data"] if cached_ok else None
+    if cached_data is not None:
+        return cached_data
+    try:
+        token = keychain.read_access_token()
+        raw = _call_usage_api(token)
+        result = {
+            "available": True,
+            "five_hour": raw.get("five_hour"),
+            "seven_day": raw.get("seven_day"),
+        }
+        with _USAGE_LOCK:
+            _usage_cache["data"] = result
+            _usage_cache["fetched_at"] = time.time()
+        return result
+    except keychain.KeychainError:
+        return {
+            "available": False,
+            "error": "Token not found — run any claude command to refresh credentials",
+        }
+    except urllib.error.HTTPError as e:
+        msg = (
+            "Token expired — run any claude command to refresh"
+            if e.code == 401
+            else f"Usage API error (HTTP {e.code})"
+        )
+        return {"available": False, "error": msg}
+    except json.JSONDecodeError:
+        return {"available": False, "error": "Usage API error — unexpected response format"}
+    except (urllib.error.URLError, OSError):
+        return {"available": False, "error": "Network error — check your connection"}
 
 
 def _tz_offset_ms() -> int:
@@ -136,54 +177,7 @@ def _make_handler(
                     self._json({**config, "_version": _APP_VERSION})
 
                 elif parsed.path == "/api/usage":
-                    with _USAGE_LOCK:
-                        now = time.time()
-                        cached_ok = (
-                            _usage_cache["fetched_at"] is not None
-                            and now - _usage_cache["fetched_at"] < 115
-                        )
-                        cached_data = _usage_cache["data"] if cached_ok else None
-                    if cached_data is not None:
-                        self._json(cached_data)
-                        return
-                    try:
-                        token = keychain.read_access_token()
-                        raw = _call_usage_api(token)
-                        result = {
-                            "available": True,
-                            "five_hour": raw.get("five_hour"),
-                            "seven_day": raw.get("seven_day"),
-                        }
-                        with _USAGE_LOCK:
-                            _usage_cache["data"] = result
-                            _usage_cache["fetched_at"] = time.time()
-                        self._json(result)
-                    except keychain.KeychainError:
-                        self._json({
-                            "available": False,
-                            "error": (
-                                "Token not found — run any claude command"
-                                " to refresh credentials"
-                            ),
-                        })
-                    except urllib.error.HTTPError as e:
-                        msg = (
-                            "Token expired — run any claude command to refresh"
-                            if e.code == 401
-                            else f"Usage API error (HTTP {e.code})"
-                        )
-                        self._json({"available": False, "error": msg})
-                    except json.JSONDecodeError:
-                        self._json({
-                            "available": False,
-                            "error": "Usage API error — unexpected response format",
-                        })
-                    except (urllib.error.URLError, OSError):
-                        self._json({
-                            "available": False,
-                            "error": "Network error — check your connection",
-                        })
-                    return
+                    self._json(_handle_usage())
 
                 else:
                     self._json_error(404, "not found")
@@ -245,9 +239,14 @@ def start_server(
     dashboard_dir: Path,
     port: int = 0,
 ) -> int:
-    """Start HTTP server on localhost. Returns the port it bound to."""
+    """Start HTTP server on localhost. Returns the port it bound to.
+
+    Uses ThreadingHTTPServer so a slow `/api/usage` (10s upstream timeout) does
+    not block other dashboard endpoints. Concurrent cache-miss requests may
+    race into duplicate Anthropic calls — benign, the cache then catches up.
+    """
     handler = _make_handler(conn, config_path, dashboard_dir)
-    server = HTTPServer(("127.0.0.1", port), handler)
+    server = ThreadingHTTPServer(("127.0.0.1", port), handler)
     port = server.server_address[1]
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()

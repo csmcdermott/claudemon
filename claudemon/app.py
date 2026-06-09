@@ -47,7 +47,7 @@ def _load_config() -> dict:
             return json.loads(CONFIG_PATH.read_text())
         except ValueError:
             pass
-    return {"weekly_output_budget": 8_000_000, "task_gap_minutes": 30, "server_port": 0}
+    return {"task_gap_minutes": 30, "server_port": 0}
 
 
 class ClaudemonApp(rumps.App):
@@ -55,7 +55,7 @@ class ClaudemonApp(rumps.App):
         global _app_instance
         _app_instance = self
 
-        super().__init__("claudemon", title="◆ — ○", quit_button=None)
+        super().__init__("claudemon", title="✱ — ○", quit_button=None)
         self._config = _load_config()
         self._conn = db.connect()
 

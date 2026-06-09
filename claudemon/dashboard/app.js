@@ -8,23 +8,9 @@ const PALETTE = [
 
 const COLOR_CLASSES = ['usage-green', 'usage-yellow', 'usage-orange', 'usage-red'];
 
-const _USAGE_STRIP_HTML = `<div class="usage-bar-group">
-    <div class="usage-row">
-      <span class="usage-lbl">5-hour session</span>
-      <span class="usage-pct" id="usage-5h-pct">—</span>
-    </div>
-    <div class="usage-track"><div class="usage-fill" id="usage-5h-fill"></div></div>
-    <div class="usage-reset" id="usage-5h-reset"></div>
-  </div>
-  <div class="usage-divider"></div>
-  <div class="usage-bar-group">
-    <div class="usage-row">
-      <span class="usage-lbl">7-day weekly</span>
-      <span class="usage-pct" id="usage-7d-pct">—</span>
-    </div>
-    <div class="usage-track"><div class="usage-fill" id="usage-7d-fill"></div></div>
-    <div class="usage-reset" id="usage-7d-reset"></div>
-  </div>`;
+// Captured from the initial DOM on first load so the success path can rebuild
+// the bar elements after the error path replaces them.
+let _usageStripHTML = '';
 
 const CHART_DEFAULTS = {
   responsive: true,
@@ -55,6 +41,13 @@ const SCALE_X = {
   ticks: { color: '#555', font: { size: 9 } },
   border: { display: false },
 };
+
+// HTML-escape server-supplied strings before interpolating into innerHTML templates.
+// Required for any value that can flow from JSONL into the dashboard — notably
+// `s.project` (cwd directory name) and `s.title` (AI-generated title).
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({
+  '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;',
+}[c]));
 
 function fmt(n) {
   if (n >= 1e9) return (n/1e9).toFixed(1)+'B';
@@ -109,20 +102,22 @@ function renderUsageStrip(data) {
   }
   // Restore bar structure if a prior error replaced it
   if (!document.getElementById('usage-5h-pct')) {
-    strip.innerHTML = _USAGE_STRIP_HTML;
+    strip.innerHTML = _usageStripHTML;
   }
 
-  function updateBar(pctElId, fillElId, resetElId, bucket) {
+  function updateBar(pctElId, fillElId, resetElId, trackElId, label, bucket) {
     const pctEl   = document.getElementById(pctElId);
     const fillEl  = document.getElementById(fillElId);
     const resetEl = document.getElementById(resetElId);
-    if (!pctEl || !fillEl || !resetEl) return;
+    const trackEl = document.getElementById(trackElId);
+    if (!pctEl || !fillEl || !resetEl || !trackEl) return;
     if (!bucket || bucket.utilization == null) {
       pctEl.textContent = '—';
       fillEl.style.width = '0%';
       fillEl.className = 'usage-fill';
       pctEl.className = 'usage-pct';
       resetEl.textContent = '';
+      trackEl.removeAttribute('title');
       return;
     }
     const pct = Math.round(bucket.utilization);
@@ -133,10 +128,11 @@ function renderUsageStrip(data) {
     fillEl.classList.add(cls);
     fillEl.style.width = Math.min(100, pct) + '%';
     resetEl.textContent = bucket.resets_at ? fmtResetsAt(bucket.resets_at) : '';
+    trackEl.title = `${pct}% of ${label} used`;
   }
 
-  updateBar('usage-5h-pct', 'usage-5h-fill', 'usage-5h-reset', data.five_hour);
-  updateBar('usage-7d-pct', 'usage-7d-fill', 'usage-7d-reset', data.seven_day);
+  updateBar('usage-5h-pct', 'usage-5h-fill', 'usage-5h-reset', 'usage-5h-track', '5-hour session', data.five_hour);
+  updateBar('usage-7d-pct', 'usage-7d-fill', 'usage-7d-reset', 'usage-7d-track', '7-day weekly', data.seven_day);
 }
 
 async function fetchUsage() {
@@ -208,7 +204,7 @@ let _paddedQueries = [];
 function onChartClick(_event, elements) {
   if (!elements.length) return;
   // Only drill when already in a multi-day range, not when already in a day view.
-  if (isHourView(currentRange)) return;
+  if (isHourBucket(currentRange)) return;
   const idx = elements[0].index;
   const ts = _paddedTimeline[idx]?.date ?? _paddedTasks[idx]?.date ?? _paddedQueries[idx]?.date;
   if (ts == null) return;
@@ -270,7 +266,7 @@ function fmtHour(ts) {
 }
 
 function bucketLabel(ts, range, prevTs = null) {
-  if (isHourView(range)) {
+  if (isHourBucket(range)) {
     const timeStr = fmtHour(ts);
     // Show date prefix when crossing midnight into a new calendar day.
     if (prevTs !== null && new Date(prevTs).getDate() !== new Date(ts).getDate()) {
@@ -322,80 +318,33 @@ function viewBuckets(range) {
   return [];
 }
 
-function padTimeline(timeline, range) {
-  if (isHourView(range) || range.startsWith('custom:')) {
-    const map = new Map(timeline.map(b => [b.date, b]));
-    return viewBuckets(range).map(ts => map.get(ts) ?? {
-      date: ts, input_tokens: 0, output_tokens: 0,
-      cache_hit_rate: 0, queries: 0, tokens_per_query: 0,
-    });
-  }
-  const days = range === '30d' ? 30 : range === '7d' ? 7 : null;
-  if (!days) return timeline;
-  const map = new Map(timeline.map(b => [b.date, b]));
-  const result = [];
-  const now = new Date();
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(now);
-    d.setDate(d.getDate() - i);
-    d.setHours(0, 0, 0, 0);
-    const ts = d.getTime();
-    result.push(map.get(ts) ?? {
-      date: ts, input_tokens: 0, output_tokens: 0,
-      cache_hit_rate: 0, queries: 0, tokens_per_query: 0,
-    });
-  }
-  return result;
-}
+// Empty-bucket factories — return a fresh stub each call so callers can
+// freely mutate nested arrays without leaking state across buckets.
+const TIMELINE_EMPTY = () => ({
+  input_tokens: 0, output_tokens: 0, cache_hit_rate: 0, queries: 0, tokens_per_query: 0,
+});
+const TASKS_EMPTY = () => ({
+  tasks: [], avg_tokens_per_task: 0, p50_tokens_per_task: 0, max_tokens_per_task: 0,
+});
+const QUERIES_EMPTY = () => ({
+  queries: [], other_count: 0, other_tokens: 0, p50_tpq: 0, max_tpq: 0,
+});
 
-function padTasks(tasksData, range) {
-  if (isHourView(range) || range.startsWith('custom:')) {
-    const map = new Map(tasksData.map(d => [d.date, d]));
-    return viewBuckets(range).map(ts => map.get(ts) ?? {
-      date: ts, tasks: [],
-      avg_tokens_per_task: 0, p50_tokens_per_task: 0, max_tokens_per_task: 0,
-    });
+function padBuckets(data, range, makeEmpty) {
+  const map = new Map(data.map(b => [b.date, b]));
+  const mk = ts => map.get(ts) ?? { date: ts, ...makeEmpty() };
+  if (isHourBucket(range) || range.startsWith('custom:')) {
+    return viewBuckets(range).map(mk);
   }
   const days = range === '30d' ? 30 : range === '7d' ? 7 : null;
-  if (!days) return tasksData;
-  const map = new Map(tasksData.map(d => [d.date, d]));
-  const result = [];
+  if (!days) return data;
   const now = new Date();
-  for (let i = days - 1; i >= 0; i--) {
+  return Array.from({ length: days }, (_, i) => {
     const d = new Date(now);
-    d.setDate(d.getDate() - i);
+    d.setDate(d.getDate() - (days - 1 - i));
     d.setHours(0, 0, 0, 0);
-    const ts = d.getTime();
-    result.push(map.get(ts) ?? {
-      date: ts, tasks: [],
-      avg_tokens_per_task: 0, p50_tokens_per_task: 0, max_tokens_per_task: 0,
-    });
-  }
-  return result;
-}
-
-function padQueries(queriesData, range) {
-  if (isHourView(range) || range.startsWith('custom:')) {
-    const map = new Map(queriesData.map(b => [b.date, b]));
-    return viewBuckets(range).map(ts => map.get(ts) ?? {
-      date: ts, queries: [], other_count: 0, other_tokens: 0, p50_tpq: 0, max_tpq: 0,
-    });
-  }
-  const days = range === '30d' ? 30 : range === '7d' ? 7 : null;
-  if (!days) return queriesData;
-  const map = new Map(queriesData.map(b => [b.date, b]));
-  const result = [];
-  const now = new Date();
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(now);
-    d.setDate(d.getDate() - i);
-    d.setHours(0, 0, 0, 0);
-    const ts = d.getTime();
-    result.push(map.get(ts) ?? {
-      date: ts, queries: [], other_count: 0, other_tokens: 0, p50_tpq: 0, max_tpq: 0,
-    });
-  }
-  return result;
+    return mk(d.getTime());
+  });
 }
 
 // ── View mode ────────────────────────────────────────────────────────────────
@@ -409,12 +358,8 @@ function isHourBucket(range) {
   return false;
 }
 
-function isHourView(range) {
-  return isHourBucket(range);
-}
-
 function setViewMode(range) {
-  document.getElementById('today-summary').classList.toggle('hidden', !isHourView(range));
+  document.getElementById('today-summary').classList.toggle('hidden', !isHourBucket(range));
 }
 
 // ── Renderers ────────────────────────────────────────────────────────────────
@@ -444,7 +389,7 @@ function renderTodaySummary(stats, range) {
 }
 
 function renderTokenChart(timeline, range) {
-  const padded = padTimeline(timeline, range);
+  const padded = padBuckets(timeline, range, TIMELINE_EMPTY);
   _paddedTimeline = padded;
   tokenChart.data.labels = padded.map((b, i) => bucketLabel(b.date, range, i > 0 ? padded[i - 1].date : null));
   tokenChart.data.datasets = [
@@ -460,7 +405,7 @@ function renderTokenChart(timeline, range) {
 }
 
 function renderQueryChart(queriesData, range) {
-  const padded = padQueries(queriesData, range);
+  const padded = padBuckets(queriesData, range, QUERIES_EMPTY);
   _paddedQueries = padded;
   if (!padded.length) return;
 
@@ -529,7 +474,7 @@ function renderQueryChart(queriesData, range) {
 }
 
 function renderTaskChart(tasksData, range) {
-  const padded = padTasks(tasksData, range);
+  const padded = padBuckets(tasksData, range, TASKS_EMPTY);
   _paddedTasks = padded;
   if (!padded.length) return;
   const labels = padded.map((d, i) => bucketLabel(d.date, range, i > 0 ? padded[i - 1].date : null));
@@ -581,15 +526,6 @@ function renderTaskChart(tasksData, range) {
   taskChart.update();
 }
 
-function renderBudget(stats, config) {
-  const budget = config?.weekly_output_budget || 0;
-  if (!budget) return;
-  const pct = Math.min(100, Math.round((stats.output_tokens / budget) * 100));
-  document.getElementById('budget-val').textContent =
-    `${fmt(stats.output_tokens)} / ${fmt(budget)} (${pct}%)`;
-  document.getElementById('budget-fill').style.width = pct + '%';
-}
-
 function renderModels(stats) {
   const el = document.getElementById('models-list');
   const total = stats.model_breakdown.reduce((s, m) => s + m.messages, 0) || 1;
@@ -598,7 +534,7 @@ function renderModels(stats) {
     const color = PALETTE[i % PALETTE.length];
     const name = m.model.replace('claude-', '').replace(/-\d{8}$/, '');
     return `<div class="model-row">
-      <div class="model-name">${name}</div>
+      <div class="model-name">${esc(name)}</div>
       <div class="model-track"><div class="model-fill" style="width:${pct}%;background:${color}"></div></div>
       <div class="model-toks">${fmt(m.input_tokens)} in / ${fmt(m.output_tokens)} out</div>
     </div>`;
@@ -616,8 +552,8 @@ function renderSessions(sessions) {
     return `<div class="s-row">
       <div class="s-dot" style="background:#3a3a4a"></div>
       <div class="s-info">
-        <div class="s-title">${s.title || 'Untitled session'}</div>
-        <div class="s-proj">${s.project} · ${dur}</div>
+        <div class="s-title">${esc(s.title || 'Untitled session')}</div>
+        <div class="s-proj">${esc(s.project)} · ${dur}</div>
       </div>
       <div class="s-right">
         <div class="s-tokens">${fmt(s.input_tokens)} in / ${fmt(s.output_tokens)} out</div>
@@ -661,14 +597,13 @@ async function refresh() {
   setViewMode(currentRange);
   renderStats(stats);
 
-  if (isHourView(currentRange)) {
+  if (isHourBucket(currentRange)) {
     renderTodaySummary(stats, currentRange);
   }
   renderTokenChart(timeline, currentRange);
   renderTaskChart(tasks, currentRange);
   renderQueryChart(queriesData, currentRange);
 
-  renderBudget(stats, config);
   renderModels(stats);
   renderSessions(sessions);
   renderFooter(stats, config);
@@ -680,6 +615,7 @@ async function refreshBanner() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  _usageStripHTML = document.getElementById('usage-strip').innerHTML;
   initCharts();
   refresh();
   refreshBanner();

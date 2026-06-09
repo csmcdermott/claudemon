@@ -16,6 +16,8 @@ _DOT_COLORS = {
     "idle":    NSColor.colorWithSRGBRed_green_blue_alpha_(0.98, 0.62, 0.04, 1.0),  # amber
     "working": NSColor.colorWithSRGBRed_green_blue_alpha_(0.13, 0.77, 0.37, 1.0),  # green
 }
+# Claude brand orange (~#D97757)
+_CLAUDE_COLOR = NSColor.colorWithSRGBRed_green_blue_alpha_(0.851, 0.467, 0.341, 1.0)
 
 _CLAUDE_SESSIONS_DIR = Path.home() / ".claude" / "sessions"
 
@@ -78,24 +80,22 @@ class StatusItem:
     def _refresh_title(self) -> None:
         tok = self._fmt_tokens(self._tokens)
         if self._button is not None:
-            self._set_attributed_title(tok, self._state)
+            self._apply_title(tok, _DOT_COLORS[self._state])
         else:
             # Fallback before the button is available (during __init__)
             dot = {"none": "○", "idle": "●", "working": "●"}[self._state]
-            self._app.title = f"◆ {tok} {dot}"
+            self._app.title = f"✱ {tok} {dot}"
 
-    def _set_attributed_title(self, tok: str, state: str) -> None:
-        """Apply a colored dot via NSAttributedString on the main thread."""
-        text = f"◆ {tok} ●"
+    def _apply_title(self, tok: str, dot_color) -> None:
+        """Build a colored attributed title and dispatch it to the main queue."""
+        text = f"✱ {tok} ●"
         attrs = NSMutableAttributedString.alloc().initWithString_(text)
-        dot_range = (len(text) - 1, 1)  # last character: the dot
-        attrs.addAttribute_value_range_(_FG_COLOR, _DOT_COLORS[state], dot_range)
+        attrs.addAttribute_value_range_(_FG_COLOR, _CLAUDE_COLOR, (0, 1))
+        attrs.addAttribute_value_range_(_FG_COLOR, dot_color, (len(text) - 1, 1))
         button = self._button
-
-        def _apply():
-            button.setAttributedTitle_(attrs)
-
-        NSOperationQueue.mainQueue().addOperationWithBlock_(_apply)
+        NSOperationQueue.mainQueue().addOperationWithBlock_(
+            lambda: button.setAttributedTitle_(attrs)
+        )
 
     def _manage_pulse(self, state: str) -> None:
         if state == "working" and self._pulse_thread is None:
@@ -115,19 +115,11 @@ class StatusItem:
             tok = self._fmt_tokens(self._tokens)
             opacity = opacities[i % 2]
             if self._button is not None:
-                text = f"◆ {tok} ●"
-                attrs = NSMutableAttributedString.alloc().initWithString_(text)
                 color = NSColor.colorWithSRGBRed_green_blue_alpha_(0.13, 0.77, 0.37, opacity)
-                attrs.addAttribute_value_range_(_FG_COLOR, color, (len(text) - 1, 1))
-                button = self._button
-
-                def _apply(a=attrs):
-                    button.setAttributedTitle_(a)
-
-                NSOperationQueue.mainQueue().addOperationWithBlock_(_apply)
+                self._apply_title(tok, color)
             else:
                 dot = "●" if opacity > 0.5 else "○"
-                self._app.title = f"◆ {tok} {dot}"
+                self._app.title = f"✱ {tok} {dot}"
             i += 1
             time.sleep(0.6)
 

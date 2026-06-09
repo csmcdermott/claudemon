@@ -5,7 +5,7 @@
 | **Project name** | claudemon |
 | **Purpose** | macOS menu bar app to monitor Claude Code usage in real time — token counts, cache hit rates, query/task analytics, active session state |
 | **Target release** | v1.0 (personal use) |
-| **Last updated** | 2026-06-08 (dashboard enhancements: p50/max lines, stacked queries chart, hourly day views, section reorder) |
+| **Last updated** | 2026-06-09 (v0.3.0: removed weekly budget panel, added usage-bar hover tooltips, ◆→✱ orange icon, XSS escape, ThreadingHTTPServer, padBuckets DRY, 5 new tests) |
 
 ## Tech Stack
 
@@ -124,6 +124,15 @@ Implementation plan: `docs/superpowers/plans/2026-06-07-claudemon.md`
 | 2026-06-07 | Task detection | Heuristic-based; very long uninterrupted sessions may produce unexpectedly large tasks |
 | 2026-06-07 | SQLite reads | Read functions (query_stats etc.) don't hold _LOCK. Concurrent read+write is safe for a single user with in-memory DB but not fully serialised. |
 | 2026-06-08 | Startup time | Full re-index on every launch. Currently ~100-200ms for ~370 sessions; will grow linearly with history. |
+| 2026-06-09 | Testing — JS | `colorClass`, `fmtResetsAt`, `padBuckets`, `bucketLabel`, `viewBuckets` have zero automated tests. Three documented past JS bugs (locale time string, custom-picker toggle, IIFE duplication). Deferred: needs a runner decision (Node + jsdom? Bun? pytest+playwright?) and dev-dep approval before tooling is added. |
+| 2026-06-09 | Testing — DST | `_range_to_timestamps("day:...")` had a real DST bug (`day_start_ms + 86400000`) — fix is in place but no regression test. Deferred: portable TZ-manipulation in pytest is non-trivial; would need Mac/Linux-only test with `TZ=America/Los_Angeles` env override. |
+| 2026-06-09 | Testing — timeout | No `pytest-timeout` configured; a hung server thread would stall the suite indefinitely. Deferred per CLAUDE.md "Minimal Dependencies" rule — pending approval to add the dev-dep. |
+| 2026-06-09 | Security — CSRF | `/api/quit` and `/api/config` POST have no Origin check. Any localhost-accessible browser tab can kill the app or rewrite persistent config. Fix: validate `Origin` header against `http://127.0.0.1:<our-port>` (or empty for WKWebView). |
+| 2026-06-09 | Security — error leak | `server.py` `_json_error(500, str(exc))` echoes exception messages into responses, leaking file paths and internal types. Fix: log details server-side via `log.exception`, return a fixed `"internal error"` body. |
+| 2026-06-09 | Security — config POST | `/api/config` POST: (a) `int(Content-Length)` accepts negative values, allowing `rfile.read(-1)` to read until EOF; (b) any JSON keys are merged into persistent config — no allowlist. Fix: clamp length to ≤64 KiB; validate keys against `{weekly_output_budget, task_gap_minutes, server_port}`. |
+| 2026-06-09 | Security — input validation | `_range_to_timestamps("custom:...")` raises ValueError/IndexError on malformed input, caught only by the generic 500 handler. Fix: validate format and return 400. |
+| 2026-06-09 | Security — SRI | `dashboard/index.html:8` loads Chart.js from jsdelivr without Subresource Integrity. If the CDN is compromised, arbitrary JS runs in the WKWebView. Fix: add `integrity="sha384-..."` + `crossorigin="anonymous"`, or vendor `chart.js` into `dashboard/`. |
+| 2026-06-09 | Security — deps | Runtime deps in `pyproject.toml` are unpinned (`rumps>=0.4.0`, `watchdog>=4.0.0`, `pyobjc-framework-WebKit>=10.0`). A future bad release would be silently picked up. Fix: pin with `~=` or commit a lock file (`uv lock` / `pip-compile`). |
 
 ## Versioning
 
@@ -154,12 +163,24 @@ The pre-commit hook (`scripts/pre-commit.sh`) auto-bumps patch on every commit. 
 - **`SCALE_X` must include `type: 'category'`**: Without it, Chart.js auto-detects scale type from label content. Numeric-looking strings (e.g. `"8"`) cause it to infer a linear scale and generate index ticks (0, 1, 2, …) instead of using `chart.data.labels`.
 - **WKWebView caching**: Default data store persists HTTP cache across app launches. Fix: `WKWebsiteDataStore.nonPersistentDataStore()` in `WKWebViewConfiguration`, plus `NSURLRequestReloadIgnoringLocalCacheData` policy on `loadRequest_`. Server also sends `Cache-Control: no-store` on all responses.
 - **py2app bundle**: `setup.py` subclasses `py2app.build_app.py2app` to clear `install_requires` before `finalize_options` (py2app 0.28 rejects it; setuptools populates it from pyproject.toml). Dashboard path in bundled mode: `Path(NSBundle.mainBundle().resourcePath()) / "dashboard"` (guarded by `sys.frozen`). `just setup` installs py2app into the venv. First launch of unsigned bundle requires right-click → Open.
+- **`esc()` XSS helper (app.js)**: Every server-supplied string interpolated into an `innerHTML` template literal MUST be wrapped in `esc()`. Currently applied in `renderModels` (`m.model`-derived `name`) and `renderSessions` (`s.title`, `s.project`). The cwd directory name is attacker-controllable (just `mkdir '<img src=x onerror=...>'` and run claude there) — without `esc()`, that string executes as JS in the dashboard. Numeric values (`fmt(...)`, `s.task_count`, `s.query_count`) are type-safe and don't need escaping.
+- **ThreadingHTTPServer (server.py)**: Handlers run in parallel threads so a slow `/api/usage` (10s upstream timeout) doesn't block the rest of the dashboard. Concurrency implications: (a) SQLite read functions don't hold `_LOCK` — safe for single-user in-memory DB; (b) `_usage_cache` writes are guarded by `_USAGE_LOCK`; (c) two simultaneous cache-miss requests may both hit Anthropic — benign, the cache catches up.
+- **`padBuckets(data, range, makeEmpty)` (app.js)**: Single gap-fill function for all three chart-data shapes. Each shape has a factory: `TIMELINE_EMPTY`, `TASKS_EMPTY`, `QUERIES_EMPTY` — functions returning a fresh empty stub (functions, not objects, so nested arrays like `tasks: []` aren't shared across buckets). When adding a new field to a chart-data response, update the corresponding `*_EMPTY` factory — that's the only place to keep in sync, replacing the per-function duplication that previously caused stub-drift bugs.
+- **Menu bar glyph**: `✱` in Claude orange (`_CLAUDE_COLOR` ≈ #D97757 in `statusitem.py`). Three places use it: `_apply_title` (button path), `_refresh_title` fallback (pre-button), `_pulse_loop` fallback, and `app.py` initial title. Keep them all in sync if changing again.
 
 ## Recently Changed Areas
 
 | Date | File / Area | What changed |
 | --- | --- | --- |
-| 2026-06-09 | claudemon/keychain.py (new) | Reads Claude Code OAuth token from macOS Keychain; `pwd.getpwuid` (not `os.getlogin`); timeout=5 |
+| 2026-06-09 | v0.3.0 release | Bumped minor: removed weekly budget panel, added usage-bar hover tooltips, icon change |
+| 2026-06-09 | dashboard/index.html | Removed budget `<section>`; added `id="usage-5h-track"` / `id="usage-7d-track"` for hover tooltips |
+| 2026-06-09 | dashboard/style.css | Removed `.budget-*` rules |
+| 2026-06-09 | dashboard/app.js | Added `esc()` XSS helper; removed `renderBudget`; usage strip sets `track.title` on hover; consolidated `padTimeline`/`padTasks`/`padQueries` → `padBuckets` with `*_EMPTY` factories; dropped `isHourView` alias; captured `_usageStripHTML` from DOM (was a duplicated JS constant) |
+| 2026-06-09 | statusitem.py | Extracted `_apply_title` helper used by both `_refresh_title` and `_pulse_loop`; `_DIAMOND_COLOR` → `_CLAUDE_COLOR` (orange); `◆` → `✱` |
+| 2026-06-09 | app.py | `◆ — ○` → `✱ — ○` initial title; removed `weekly_output_budget` from default config |
+| 2026-06-09 | server.py | Extracted `_handle_usage()` from `do_GET` inline branch; `HTTPServer` → `ThreadingHTTPServer` |
+| 2026-06-09 | tests/test_server.py | Added `test_call_usage_api_constructs_correct_request`, `test_static_serves_css`, `test_static_404_for_missing_file`, `test_static_403_for_path_traversal`, `test_quit_endpoint_sends_sigterm`; replaced fixture `sleep(0.1)` with poll loop (suite 2.4s → 0.17s); coverage 88% → 92% |
+| 2026-06-09 | docs/agent/project-analysis.md | Recorded 9 deferred items: 3 testing gaps (JS units, DST regression, pytest-timeout) + 6 security findings (CSRF, error-leak, config-POST hardening, custom-range 400, SRI, dep pinning) |
 | 2026-06-09 | server.py | Added `/api/usage` route + `_usage_cache` (115s TTL) + `_call_usage_api()` |
 | 2026-06-09 | dashboard/index.html | Added `#usage-strip` compact bar between tabs and stats |
 | 2026-06-09 | dashboard/style.css | Added `.usage-*` classes + color state classes (green/yellow/orange/red) |
