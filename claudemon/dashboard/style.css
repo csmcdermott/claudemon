@@ -246,6 +246,15 @@ footer {
   flex-shrink: 0;
 }
 
+.usage-tooltip {
+  visibility: hidden;
+  font-size: 10px;
+  color: #aaa;
+  margin-top: 3px;
+  min-height: 13px;
+}
+.usage-bar-group:hover .usage-tooltip { visibility: visible; }
+
 .usage-error {
   font-size: 11px;
   color: #666;

@@ -106,10 +106,11 @@ function renderUsageStrip(data) {
   }
 
   function updateBar(pctElId, fillElId, resetElId, trackElId, label, bucket) {
-    const pctEl   = document.getElementById(pctElId);
-    const fillEl  = document.getElementById(fillElId);
-    const resetEl = document.getElementById(resetElId);
-    const trackEl = document.getElementById(trackElId);
+    const pctEl     = document.getElementById(pctElId);
+    const fillEl    = document.getElementById(fillElId);
+    const resetEl   = document.getElementById(resetElId);
+    const trackEl   = document.getElementById(trackElId);
+    const tooltipEl = document.getElementById(trackElId.replace('-track', '-tooltip'));
     if (!pctEl || !fillEl || !resetEl || !trackEl) return;
     if (!bucket || bucket.utilization == null) {
       pctEl.textContent = '—';
@@ -117,7 +118,7 @@ function renderUsageStrip(data) {
       fillEl.className = 'usage-fill';
       pctEl.className = 'usage-pct';
       resetEl.textContent = '';
-      trackEl.removeAttribute('title');
+      if (tooltipEl) tooltipEl.textContent = '';
       return;
     }
     const pct = Math.round(bucket.utilization);
@@ -128,7 +129,7 @@ function renderUsageStrip(data) {
     fillEl.classList.add(cls);
     fillEl.style.width = Math.min(100, pct) + '%';
     resetEl.textContent = bucket.resets_at ? fmtResetsAt(bucket.resets_at) : '';
-    trackEl.title = `${pct}% of ${label} used`;
+    if (tooltipEl) tooltipEl.textContent = `${pct}% of ${label} used`;
   }
 
   updateBar('usage-5h-pct', 'usage-5h-fill', 'usage-5h-reset', 'usage-5h-track', '5-hour session', data.five_hour);
