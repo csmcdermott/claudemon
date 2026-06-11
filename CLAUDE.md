@@ -1,6 +1,6 @@
-# {PROJECT NAME} - Overview
+# claudemon — Overview
 
-This document provides a technical overview of the {PROJECT NAME} project, intended to help AI Agents manage this project. 
+This document provides a technical overview of the claudemon project, intended to help AI Agents manage this project.
 
 
 ## Project Structure
@@ -53,7 +53,15 @@ The version is displayed in the dashboard footer and served via `/api/config` as
 
 ## Architectural Notes
 
-- Put any high-level relevant constraints here, such as language choices or components
+- **macOS-only**: Built on rumps + PyObjC (NSPanel, WKWebView). No Linux or Windows support.
+- **In-memory SQLite only**: `db.connect()` always returns `":memory:"`. Full re-index on every
+  launch; no persistent DB file. Adding a `DB_PATH` constant would be wrong.
+- **Local data only**: Reads `~/.claude/projects/**/*.jsonl` and `~/.claude/sessions/*.json`.
+  The only outbound network call is the optional `/api/usage` → Anthropic OAuth API for
+  rate-limit state (115 s cache, fails gracefully if unavailable).
+- **NSPanel + WKWebView for the dashboard**: Not a native AppKit UI. The panel hosts a WKWebView
+  that loads `http://127.0.0.1:<port>/` — a local Chart.js dashboard served by `server.py`.
+- **Python 3.11+ required**: Driven by the PyObjC dependency and f-string / match usage.
 
 
 ## Documentation
