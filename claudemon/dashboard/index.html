@@ -116,15 +116,23 @@
   <div class="chart-wrap"><canvas id="token-chart"></canvas></div>
 </section>
 
-<section>
-  <div class="sec-title" style="margin-bottom:4px">Recent sessions</div>
-  <div id="sessions-list"></div>
-</section>
+<div class="csec">
+  <div class="csec-hdr">
+    <span class="csec-title">Recent sessions</span>
+    <span class="csec-chevron">▶</span>
+  </div>
+  <div class="csec-body">
+    <div id="sessions-list"></div>
+  </div>
+</div>
 
-<section class="chart-section">
-  <div class="sec-hdr">
-    <div class="sec-title">Tasks &amp; queries</div>
-    <div class="legend">
+<div class="csec">
+  <div class="csec-hdr">
+    <span class="csec-title">Tasks &amp; queries</span>
+    <span class="csec-chevron">▶</span>
+  </div>
+  <div class="csec-body">
+    <div class="legend" style="margin-bottom:4px">
       <div class="leg">
         <div style="display:flex;gap:2px">
           <div class="leg-dot" style="background:rgba(167,139,250,0.8)"></div>
@@ -136,15 +144,18 @@
       <div class="leg"><div class="leg-line leg-dashed" style="border-color:#fcd34d"></div>p50 tok</div>
       <div class="leg"><div class="leg-line" style="background:#f87171"></div>top tok</div>
     </div>
+    <div class="axis-labels"><div class="axis-lbl">← queries</div><div class="axis-lbl">tok/task →</div></div>
+    <div class="chart-wrap tall"><canvas id="task-chart"></canvas></div>
   </div>
-  <div class="axis-labels"><div class="axis-lbl">← queries</div><div class="axis-lbl">tok/task →</div></div>
-  <div class="chart-wrap tall"><canvas id="task-chart"></canvas></div>
-</section>
+</div>
 
-<section class="chart-section">
-  <div class="sec-hdr">
-    <div class="sec-title">Queries by token volume</div>
-    <div class="legend">
+<div class="csec">
+  <div class="csec-hdr">
+    <span class="csec-title">Queries by token volume</span>
+    <span class="csec-chevron">▶</span>
+  </div>
+  <div class="csec-body">
+    <div class="legend" style="margin-bottom:4px">
       <div class="leg">
         <div style="display:flex;gap:2px">
           <div class="leg-dot" style="background:rgba(167,139,250,0.8)"></div>
@@ -156,15 +167,40 @@
       <div class="leg"><div class="leg-line leg-dashed" style="border-color:#fcd34d"></div>p50 tok</div>
       <div class="leg"><div class="leg-line" style="background:#f87171"></div>top tok</div>
     </div>
+    <div class="axis-labels"><div class="axis-lbl">← tokens</div><div class="axis-lbl">tok/query →</div></div>
+    <div class="chart-wrap tall"><canvas id="query-chart"></canvas></div>
   </div>
-  <div class="axis-labels"><div class="axis-lbl">← tokens</div><div class="axis-lbl">tok/query →</div></div>
-  <div class="chart-wrap tall"><canvas id="query-chart"></canvas></div>
-</section>
+</div>
 
-<section>
-  <div class="sec-title" style="margin-bottom:6px">Model breakdown</div>
-  <div id="models-list"></div>
-</section>
+<div class="csec">
+  <div class="csec-hdr">
+    <span class="csec-title">Model breakdown</span>
+    <span class="csec-chevron">▶</span>
+  </div>
+  <div class="csec-body">
+    <div id="models-list"></div>
+  </div>
+</div>
+
+<div class="csec">
+  <div class="csec-hdr">
+    <span class="csec-title">Skills used</span>
+    <span class="csec-chevron">▶</span>
+  </div>
+  <div class="csec-body">
+    <div id="skills-list"></div>
+  </div>
+</div>
+
+<div class="csec">
+  <div class="csec-hdr">
+    <span class="csec-title">MCP tools</span>
+    <span class="csec-chevron">▶</span>
+  </div>
+  <div class="csec-body">
+    <div id="mcp-list"></div>
+  </div>
+</div>
 
 <footer>
   <div class="footer-stat" id="footer-stat">—</div>
