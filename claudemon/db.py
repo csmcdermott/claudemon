@@ -438,3 +438,45 @@ def query_today_output_tokens(conn: sqlite3.Connection) -> int:
         (today_start, now),
     ).fetchone()
     return row["total"]
+
+
+def query_tool_usage(
+    conn: sqlite3.Connection,
+    range_ts: tuple[int, int],
+) -> dict:
+    """Return skill and MCP tool usage aggregated over the range.
+
+    Returns {"skills": [...], "mcp": [...]} sorted by calls descending.
+    Each entry: {name, calls, p50_output_tokens, max_output_tokens}.
+    """
+    start_ms, end_ms = range_ts
+    rows = conn.execute("""
+        SELECT tool_type, tool_name, output_tokens
+        FROM tool_uses
+        WHERE timestamp BETWEEN ? AND ?
+        ORDER BY tool_type, tool_name
+    """, (start_ms, end_ms)).fetchall()
+
+    groups: dict[tuple, list] = {}
+    for r in rows:
+        key = (r["tool_type"], r["tool_name"])
+        if key not in groups:
+            groups[key] = []
+        groups[key].append(r["output_tokens"])
+
+    skills: list[dict] = []
+    mcp: list[dict] = []
+    for (tool_type, tool_name), tokens in groups.items():
+        n = len(tokens)
+        sorted_tok = sorted(tokens)
+        entry = {
+            "name": tool_name,
+            "calls": n,
+            "p50_output_tokens": sorted_tok[(n - 1) // 2],
+            "max_output_tokens": sorted_tok[-1],
+        }
+        (skills if tool_type == "skill" else mcp).append(entry)
+
+    skills.sort(key=lambda x: x["calls"], reverse=True)
+    mcp.sort(key=lambda x: x["calls"], reverse=True)
+    return {"skills": skills, "mcp": mcp}

@@ -221,3 +221,42 @@ def test_insert_tool_use_deduplication(conn):
     db.insert_tool_use(conn, "s1", "s1:1:1", 1500, "skill", "brainstorming", 500)
     count = conn.execute("SELECT COUNT(*) FROM tool_uses").fetchone()[0]
     assert count == 1
+
+
+def test_query_tool_usage_empty_range(conn):
+    now = int(time.time() * 1000)
+    db.upsert_session(conn, "s1", "proj", None, 1000, 2000, "main")
+    db.insert_tool_use(conn, "s1", "s1:1:1", 1500, "skill", "brainstorming", 500)
+    result = db.query_tool_usage(conn, (now + 1_000_000, now + 2_000_000))
+    assert result == {"skills": [], "mcp": []}
+
+
+def test_query_tool_usage_basic(conn):
+    now = int(time.time() * 1000)
+    db.upsert_session(conn, "s1", "proj", None, now - 5000, now, "main")
+    db.insert_tool_use(conn, "s1", "s1:1:1", now - 4000, "skill", "brainstorming", 500)
+    db.insert_tool_use(conn, "s1", "s1:1:2", now - 3000, "skill", "brainstorming", 1000)
+    db.insert_tool_use(conn, "s1", "s1:1:3", now - 2000, "skill", "tdd", 800)
+    db.insert_tool_use(conn, "s1", "s1:1:1", now - 4000, "mcp", "playwright", 500)
+    result = db.query_tool_usage(conn, (now - 10_000, now))
+    # brainstorming has 2 calls, tdd has 1 — sorted descending by calls
+    assert result["skills"][0]["name"] == "brainstorming"
+    assert result["skills"][0]["calls"] == 2
+    assert result["skills"][1]["name"] == "tdd"
+    assert result["skills"][1]["calls"] == 1
+    assert result["mcp"][0]["name"] == "playwright"
+    assert result["mcp"][0]["calls"] == 1
+
+
+def test_query_tool_usage_p50_max(conn):
+    now = int(time.time() * 1000)
+    db.upsert_session(conn, "s1", "proj", None, now - 5000, now, "main")
+    db.insert_tool_use(conn, "s1", "s1:1:1", now - 4000, "skill", "brainstorming", 500)
+    db.insert_tool_use(conn, "s1", "s1:1:2", now - 3000, "skill", "brainstorming", 1000)
+    db.insert_tool_use(conn, "s1", "s1:1:3", now - 2000, "skill", "brainstorming", 2000)
+    result = db.query_tool_usage(conn, (now - 10_000, now))
+    skill = result["skills"][0]
+    assert skill["calls"] == 3
+    # sorted [500, 1000, 2000]; n=3; (3-1)//2 = 1; p50 = 1000
+    assert skill["p50_output_tokens"] == 1000
+    assert skill["max_output_tokens"] == 2000
