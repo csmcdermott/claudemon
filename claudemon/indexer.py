@@ -177,6 +177,30 @@ def index_file(
                     input_tokens, output_tokens, cache_creation, cache_read,
                 )
 
+                for block in msg.get("content", []):
+                    if block.get("type") != "tool_use":
+                        continue
+                    block_name = block.get("name", "")
+                    if block_name == "Skill":
+                        tool_type = "skill"
+                        tool_name = block.get("input", {}).get("skill", "unknown")
+                    elif block_name.startswith("mcp__"):
+                        tool_type = "mcp"
+                        service = block_name.split("__")[1]
+                        if service.startswith("plugin_"):
+                            service = service.removeprefix("plugin_")
+                            tool_name = service.split("_")[0].lower()
+                        elif service.startswith("claude_ai_"):
+                            tool_name = service.removeprefix("claude_ai_").lower().replace("_", "-")
+                        else:
+                            tool_name = service.split("_")[0].lower()
+                    else:
+                        continue
+                    db.insert_tool_use(
+                        conn, session_id, query_id, ts,
+                        tool_type, tool_name, output_tokens,
+                    )
+
                 if ts:
                     last_timestamp = ts
 

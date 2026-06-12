@@ -252,3 +252,95 @@ def test_index_all(conn, tmp_path):
     indexer.index_all(conn, tmp_path, task_gap_minutes=30)
     count = conn.execute("SELECT COUNT(*) FROM messages WHERE session_id='s1'").fetchone()[0]
     assert count == 1
+
+
+def test_index_file_inserts_skill_tool_use(conn, tmp_path):
+    jsonl = tmp_path / "t1.jsonl"
+    jsonl.write_text(
+        '{"type":"user","message":{"role":"user","content":[{"type":"text","text":"q"}]},'
+        '"timestamp":"2026-06-01T10:00:00.000Z","sessionId":"t1","uuid":"u1",'
+        '"parentUuid":null,"cwd":"/p","gitBranch":"main","isSidechain":false,'
+        '"isMeta":false,"entrypoint":"cli","userType":"external","version":"2.1.0"}\n'
+        '{"type":"assistant","message":{"model":"claude-sonnet-4-6","usage":{'
+        '"input_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,'
+        '"output_tokens":500},"stop_reason":"tool_use","content":[{"type":"tool_use",'
+        '"id":"tu_1","name":"Skill","input":{"skill":"brainstorming"}}]},'
+        '"timestamp":"2026-06-01T10:00:05.000Z","sessionId":"t1","uuid":"a1",'
+        '"parentUuid":"u1","cwd":"/p","gitBranch":"main","isSidechain":false,'
+        '"entrypoint":"cli","userType":"external","version":"2.1.0"}\n'
+    )
+    indexer.index_file(conn, jsonl, task_gap_minutes=30)
+    rows = conn.execute("SELECT * FROM tool_uses WHERE session_id='t1'").fetchall()
+    assert len(rows) == 1
+    assert rows[0]["tool_type"] == "skill"
+    assert rows[0]["tool_name"] == "brainstorming"
+    assert rows[0]["output_tokens"] == 500
+
+
+def test_index_file_inserts_plugin_mcp_tool_use(conn, tmp_path):
+    jsonl = tmp_path / "t2.jsonl"
+    jsonl.write_text(
+        '{"type":"user","message":{"role":"user","content":[{"type":"text","text":"q"}]},'
+        '"timestamp":"2026-06-01T10:00:00.000Z","sessionId":"t2","uuid":"u1",'
+        '"parentUuid":null,"cwd":"/p","gitBranch":"main","isSidechain":false,'
+        '"isMeta":false,"entrypoint":"cli","userType":"external","version":"2.1.0"}\n'
+        '{"type":"assistant","message":{"model":"claude-sonnet-4-6","usage":{'
+        '"input_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,'
+        '"output_tokens":300},"stop_reason":"tool_use","content":[{"type":"tool_use",'
+        '"id":"tu_2","name":"mcp__plugin_playwright_playwright__browser_navigate",'
+        '"input":{"url":"http://example.com"}}]},'
+        '"timestamp":"2026-06-01T10:00:05.000Z","sessionId":"t2","uuid":"a1",'
+        '"parentUuid":"u1","cwd":"/p","gitBranch":"main","isSidechain":false,'
+        '"entrypoint":"cli","userType":"external","version":"2.1.0"}\n'
+    )
+    indexer.index_file(conn, jsonl, task_gap_minutes=30)
+    rows = conn.execute("SELECT * FROM tool_uses WHERE session_id='t2'").fetchall()
+    assert len(rows) == 1
+    assert rows[0]["tool_type"] == "mcp"
+    assert rows[0]["tool_name"] == "playwright"
+    assert rows[0]["output_tokens"] == 300
+
+
+def test_index_file_inserts_claude_ai_mcp_tool_use(conn, tmp_path):
+    jsonl = tmp_path / "t3.jsonl"
+    jsonl.write_text(
+        '{"type":"user","message":{"role":"user","content":[{"type":"text","text":"q"}]},'
+        '"timestamp":"2026-06-01T10:00:00.000Z","sessionId":"t3","uuid":"u1",'
+        '"parentUuid":null,"cwd":"/p","gitBranch":"main","isSidechain":false,'
+        '"isMeta":false,"entrypoint":"cli","userType":"external","version":"2.1.0"}\n'
+        '{"type":"assistant","message":{"model":"claude-sonnet-4-6","usage":{'
+        '"input_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,'
+        '"output_tokens":200},"stop_reason":"tool_use","content":[{"type":"tool_use",'
+        '"id":"tu_3","name":"mcp__claude_ai_Google_Drive__copy_file",'
+        '"input":{"fileId":"abc"}}]},'
+        '"timestamp":"2026-06-01T10:00:05.000Z","sessionId":"t3","uuid":"a1",'
+        '"parentUuid":"u1","cwd":"/p","gitBranch":"main","isSidechain":false,'
+        '"entrypoint":"cli","userType":"external","version":"2.1.0"}\n'
+    )
+    indexer.index_file(conn, jsonl, task_gap_minutes=30)
+    rows = conn.execute("SELECT * FROM tool_uses WHERE session_id='t3'").fetchall()
+    assert len(rows) == 1
+    assert rows[0]["tool_type"] == "mcp"
+    assert rows[0]["tool_name"] == "google-drive"
+
+
+def test_index_file_no_tool_use_in_text_only_content(conn, tmp_path):
+    jsonl = tmp_path / "t4.jsonl"
+    jsonl.write_text(
+        '{"type":"user","message":{"role":"user","content":[{"type":"text","text":"q"}]},'
+        '"timestamp":"2026-06-01T10:00:00.000Z","sessionId":"t4","uuid":"u1",'
+        '"parentUuid":null,"cwd":"/p","gitBranch":"main","isSidechain":false,'
+        '"isMeta":false,"entrypoint":"cli","userType":"external","version":"2.1.0"}\n'
+        '{"type":"assistant","message":{"model":"claude-sonnet-4-6","usage":{'
+        '"input_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,'
+        '"output_tokens":100},"stop_reason":"end_turn","content":[{"type":"text",'
+        '"text":"Here is the answer."}]},'
+        '"timestamp":"2026-06-01T10:00:05.000Z","sessionId":"t4","uuid":"a1",'
+        '"parentUuid":"u1","cwd":"/p","gitBranch":"main","isSidechain":false,'
+        '"entrypoint":"cli","userType":"external","version":"2.1.0"}\n'
+    )
+    indexer.index_file(conn, jsonl, task_gap_minutes=30)
+    count = conn.execute(
+        "SELECT COUNT(*) FROM tool_uses WHERE session_id='t4'"
+    ).fetchone()[0]
+    assert count == 0
