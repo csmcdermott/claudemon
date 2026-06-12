@@ -192,6 +192,7 @@ const api = {
   sessions(range) { return api.get(`/api/sessions?range=${range}&limit=10`); },
   active()        { return api.get(`/api/sessions?range=all&limit=1&active=true`); },
   config()        { return api.get(`/api/config`); },
+  tools(range)    { return api.get(`/api/tools?range=${range}`); },
 };
 
 let tokenChart, queryChart, taskChart;
@@ -583,16 +584,57 @@ function renderFooter(stats, config) {
   }
 }
 
+function initCollapsibles() {
+  document.querySelectorAll('.csec-hdr').forEach(hdr => {
+    hdr.addEventListener('click', () => hdr.closest('.csec').classList.toggle('open'));
+  });
+}
+
+function renderSkills(skills) {
+  const el = document.getElementById('skills-list');
+  if (!skills.length) {
+    el.innerHTML = '<div style="color:#444;font-size:11px;padding:4px 0">No skill usage in this range</div>';
+    return;
+  }
+  const maxCalls = skills[0].calls;
+  el.innerHTML = skills.map(s => {
+    const pct = Math.round(s.calls / maxCalls * 100);
+    return `<div class="tool-row">
+      <div class="tool-name" title="${esc(s.name)}">${esc(s.name)}</div>
+      <div class="tool-bar-wrap"><div class="tool-fill skill-fill" style="width:${pct}%"></div></div>
+      <div class="tool-meta">×${s.calls} · ${fmt(s.p50_output_tokens)} 50% / ${fmt(s.max_output_tokens)} max</div>
+    </div>`;
+  }).join('');
+}
+
+function renderMcp(mcp) {
+  const el = document.getElementById('mcp-list');
+  if (!mcp.length) {
+    el.innerHTML = '<div style="color:#444;font-size:11px;padding:4px 0">No MCP usage in this range</div>';
+    return;
+  }
+  const maxCalls = mcp[0].calls;
+  el.innerHTML = mcp.map(m => {
+    const pct = Math.round(m.calls / maxCalls * 100);
+    return `<div class="tool-row">
+      <div class="tool-name" title="${esc(m.name)}">${esc(m.name)}</div>
+      <div class="tool-bar-wrap"><div class="tool-fill mcp-fill" style="width:${pct}%"></div></div>
+      <div class="tool-meta">×${m.calls} · ${fmt(m.p50_output_tokens)} 50% / ${fmt(m.max_output_tokens)} max</div>
+    </div>`;
+  }).join('');
+}
+
 let currentRange = '7d';
 
 async function refresh() {
-  const [stats, timeline, tasks, queriesData, sessions, config] = await Promise.all([
+  const [stats, timeline, tasks, queriesData, sessions, config, tools] = await Promise.all([
     api.stats(currentRange),
     api.timeline(currentRange),
     api.tasks(currentRange),
     api.queries(currentRange),
     api.sessions(currentRange),
     api.config(),
+    api.tools(currentRange),
   ]);
 
   setViewMode(currentRange);
@@ -608,6 +650,8 @@ async function refresh() {
   renderModels(stats);
   renderSessions(sessions);
   renderFooter(stats, config);
+  renderSkills(tools.skills);
+  renderMcp(tools.mcp);
 }
 
 async function refreshBanner() {
@@ -618,6 +662,7 @@ async function refreshBanner() {
 document.addEventListener('DOMContentLoaded', () => {
   _usageStripHTML = document.getElementById('usage-strip').innerHTML;
   initCharts();
+  initCollapsibles();
   refresh();
   refreshBanner();
   fetchUsage();
