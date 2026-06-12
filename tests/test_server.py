@@ -333,6 +333,69 @@ def test_static_403_for_path_traversal(server):
     assert exc_info.value.code == 403
 
 
+# ── /api/tools tests ─────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def tools_seeded_conn(conn):
+    """DB with tool_uses rows for /api/tools testing."""
+    now = int(time.time() * 1000)
+    db.upsert_session(conn, "t1", "proj", "T1", now - 7200000, now, "main")
+    db.insert_message(conn, "t1", "t1:1", "t1:1:1", now - 7000000, "claude-sonnet-4-6", 10, 500, 0, 0)
+    db.insert_message(conn, "t1", "t1:1", "t1:1:2", now - 6000000, "claude-sonnet-4-6", 10, 1000, 0, 0)
+    db.insert_message(conn, "t1", "t1:1", "t1:1:3", now - 5000000, "claude-sonnet-4-6", 10, 2000, 0, 0)
+    db.insert_tool_use(conn, "t1", "t1:1:1", now - 7000000, "skill", "brainstorming", 500)
+    db.insert_tool_use(conn, "t1", "t1:1:2", now - 6000000, "skill", "brainstorming", 1000)
+    db.insert_tool_use(conn, "t1", "t1:1:3", now - 5000000, "skill", "brainstorming", 2000)
+    db.insert_tool_use(conn, "t1", "t1:1:1", now - 7000000, "mcp", "playwright", 500)
+    return conn
+
+
+@pytest.fixture
+def tools_server(tools_seeded_conn, tmp_path):
+    dashboard_dir = tmp_path / "dashboard"
+    dashboard_dir.mkdir()
+    (dashboard_dir / "index.html").write_text("<html><body>dashboard</body></html>")
+    (dashboard_dir / "style.css").write_text("body{}")
+    (dashboard_dir / "app.js").write_text("// ok")
+    config_path = tmp_path / "config.json"
+    config_path.write_text('{"task_gap_minutes": 30}')
+    port = start_server(tools_seeded_conn, config_path, dashboard_dir)
+    base = f"http://127.0.0.1:{port}"
+    deadline = time.time() + 2.0
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(base + "/", timeout=0.2) as r:
+                r.read()
+            break
+        except (urllib.error.URLError, OSError):
+            time.sleep(0.01)
+    else:
+        raise RuntimeError("server did not start within 2s")
+    yield base
+
+
+def test_tools_endpoint_empty(server):
+    data = _get(server + "/api/tools?range=7d")
+    assert "skills" in data
+    assert "mcp" in data
+    assert data["skills"] == []
+    assert data["mcp"] == []
+
+
+def test_tools_endpoint_with_data(tools_server):
+    data = _get(tools_server + "/api/tools?range=all")
+    assert len(data["skills"]) == 1
+    skill = data["skills"][0]
+    assert skill["name"] == "brainstorming"
+    assert skill["calls"] == 3
+    assert skill["p50_output_tokens"] == 1000   # sorted [500,1000,2000] → index 1
+    assert skill["max_output_tokens"] == 2000
+    assert len(data["mcp"]) == 1
+    assert data["mcp"][0]["name"] == "playwright"
+    assert data["mcp"][0]["calls"] == 1
+
+
 # ── /api/quit test ───────────────────────────────────────────────────────────
 
 

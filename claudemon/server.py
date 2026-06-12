@@ -179,6 +179,9 @@ def _make_handler(
                 elif parsed.path == "/api/usage":
                     self._json(_handle_usage())
 
+                elif parsed.path == "/api/tools":
+                    self._json(db.query_tool_usage(conn, range_ts))
+
                 else:
                     self._json_error(404, "not found")
 
