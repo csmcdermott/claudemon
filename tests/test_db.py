@@ -211,6 +211,8 @@ def test_insert_tool_use_basic(conn):
     assert rows[0]["tool_type"] == "skill"
     assert rows[0]["tool_name"] == "brainstorming"
     assert rows[0]["output_tokens"] == 500
+    assert rows[0]["timestamp"] == 1500
+    assert rows[0]["query_id"] == "s1:1:1"
 
 
 def test_insert_tool_use_deduplication(conn):
