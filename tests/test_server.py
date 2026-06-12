@@ -341,9 +341,10 @@ def tools_seeded_conn(conn):
     """DB with tool_uses rows for /api/tools testing."""
     now = int(time.time() * 1000)
     db.upsert_session(conn, "t1", "proj", "T1", now - 7200000, now, "main")
-    db.insert_message(conn, "t1", "t1:1", "t1:1:1", now - 7000000, "claude-sonnet-4-6", 10, 500, 0, 0)
-    db.insert_message(conn, "t1", "t1:1", "t1:1:2", now - 6000000, "claude-sonnet-4-6", 10, 1000, 0, 0)
-    db.insert_message(conn, "t1", "t1:1", "t1:1:3", now - 5000000, "claude-sonnet-4-6", 10, 2000, 0, 0)
+    model = "claude-sonnet-4-6"
+    db.insert_message(conn, "t1", "t1:1", "t1:1:1", now - 7000000, model, 10, 500, 0, 0)
+    db.insert_message(conn, "t1", "t1:1", "t1:1:2", now - 6000000, model, 10, 1000, 0, 0)
+    db.insert_message(conn, "t1", "t1:1", "t1:1:3", now - 5000000, model, 10, 2000, 0, 0)
     db.insert_tool_use(conn, "t1", "t1:1:1", now - 7000000, "skill", "brainstorming", 500)
     db.insert_tool_use(conn, "t1", "t1:1:2", now - 6000000, "skill", "brainstorming", 1000)
     db.insert_tool_use(conn, "t1", "t1:1:3", now - 5000000, "skill", "brainstorming", 2000)
