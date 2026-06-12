@@ -194,3 +194,28 @@ def test_query_query_breakdown_hourly_bucket(conn):
     assert len(result) == 2
     dates = {b["date"] for b in result}
     assert len(dates) == 2
+
+
+def test_tool_uses_table_exists(conn):
+    tables = {r[0] for r in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'"
+    ).fetchall()}
+    assert "tool_uses" in tables
+
+
+def test_insert_tool_use_basic(conn):
+    db.upsert_session(conn, "s1", "proj", None, 1000, 2000, "main")
+    db.insert_tool_use(conn, "s1", "s1:1:1", 1500, "skill", "brainstorming", 500)
+    rows = conn.execute("SELECT * FROM tool_uses WHERE session_id='s1'").fetchall()
+    assert len(rows) == 1
+    assert rows[0]["tool_type"] == "skill"
+    assert rows[0]["tool_name"] == "brainstorming"
+    assert rows[0]["output_tokens"] == 500
+
+
+def test_insert_tool_use_deduplication(conn):
+    db.upsert_session(conn, "s1", "proj", None, 1000, 2000, "main")
+    db.insert_tool_use(conn, "s1", "s1:1:1", 1500, "skill", "brainstorming", 500)
+    db.insert_tool_use(conn, "s1", "s1:1:1", 1500, "skill", "brainstorming", 500)
+    count = conn.execute("SELECT COUNT(*) FROM tool_uses").fetchone()[0]
+    assert count == 1

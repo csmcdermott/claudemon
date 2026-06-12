@@ -42,6 +42,18 @@ CREATE INDEX IF NOT EXISTS idx_messages_ts      ON messages(timestamp);
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
 CREATE INDEX IF NOT EXISTS idx_messages_task    ON messages(task_id);
 CREATE INDEX IF NOT EXISTS idx_messages_query   ON messages(query_id);
+
+CREATE TABLE IF NOT EXISTS tool_uses (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id    TEXT REFERENCES sessions(session_id),
+    query_id      TEXT,
+    timestamp     INTEGER,
+    tool_type     TEXT,
+    tool_name     TEXT,
+    output_tokens INTEGER DEFAULT 0,
+    UNIQUE (session_id, query_id, timestamp, tool_type, tool_name)
+);
+CREATE INDEX IF NOT EXISTS idx_tool_uses_ts ON tool_uses(timestamp);
 """
 
 
@@ -93,6 +105,24 @@ def insert_message(
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (session_id, task_id, query_id, timestamp, model,
               input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens))
+        conn.commit()
+
+
+def insert_tool_use(
+    conn: sqlite3.Connection,
+    session_id: str,
+    query_id: str,
+    timestamp: int,
+    tool_type: str,
+    tool_name: str,
+    output_tokens: int,
+) -> None:
+    with _LOCK:
+        conn.execute("""
+            INSERT OR IGNORE INTO tool_uses
+                (session_id, query_id, timestamp, tool_type, tool_name, output_tokens)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (session_id, query_id, timestamp, tool_type, tool_name, output_tokens))
         conn.commit()
 
 
