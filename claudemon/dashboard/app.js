@@ -584,6 +584,66 @@ function renderFooter(stats, config) {
   }
 }
 
+function initDragDrop() {
+  let dragSrc = null;
+  let fromHandle = false;
+
+  document.addEventListener('mouseup', () => { fromHandle = false; }, { passive: true });
+
+  document.querySelectorAll('.csec').forEach(el => {
+    const handle = el.querySelector('.drag-handle');
+    if (!handle) return;
+
+    handle.addEventListener('mousedown', () => { fromHandle = true; });
+    el.setAttribute('draggable', 'true');
+
+    el.addEventListener('dragstart', e => {
+      if (!fromHandle) { e.preventDefault(); return; }
+      dragSrc = el;
+      el.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+
+    el.addEventListener('dragend', () => {
+      fromHandle = false;
+      el.classList.remove('dragging');
+      document.querySelectorAll('.csec').forEach(s => {
+        s.classList.remove('drag-over-top', 'drag-over-bottom');
+      });
+      dragSrc = null;
+      saveSectionOrder();
+    });
+
+    el.addEventListener('dragover', e => {
+      if (!dragSrc || dragSrc === el) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      const rect = el.getBoundingClientRect();
+      const isTop = e.clientY < rect.top + rect.height / 2;
+      el.classList.toggle('drag-over-top', isTop);
+      el.classList.toggle('drag-over-bottom', !isTop);
+    });
+
+    el.addEventListener('dragleave', e => {
+      if (!el.contains(e.relatedTarget)) {
+        el.classList.remove('drag-over-top', 'drag-over-bottom');
+      }
+    });
+
+    el.addEventListener('drop', e => {
+      e.preventDefault();
+      if (!dragSrc || dragSrc === el) return;
+      const rect = el.getBoundingClientRect();
+      if (e.clientY < rect.top + rect.height / 2) {
+        el.before(dragSrc);
+      } else {
+        el.after(dragSrc);
+      }
+      el.classList.remove('drag-over-top', 'drag-over-bottom');
+    });
+  });
+}
+
 function initCollapsibles() {
   document.querySelectorAll('.csec-hdr').forEach(hdr => {
     hdr.addEventListener('click', () => {
@@ -719,6 +779,7 @@ document.addEventListener('DOMContentLoaded', () => {
   _usageStripHTML = document.getElementById('usage-strip').innerHTML;
   initCharts();
   initCollapsibles();
+  initDragDrop();
   refresh();
   refreshBanner();
   fetchUsage();
