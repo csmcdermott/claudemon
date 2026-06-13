@@ -595,6 +595,7 @@ function initDragDrop() {
     if (!handle) return;
 
     handle.addEventListener('mousedown', () => { fromHandle = true; });
+    handle.addEventListener('click', e => e.stopPropagation());
     el.setAttribute('draggable', 'true');
 
     el.addEventListener('dragstart', e => {
@@ -659,7 +660,7 @@ function renderSkills(skills) {
     el.innerHTML = '<div style="color:#444;font-size:11px;padding:4px 0">No skill usage in this range</div>';
     return;
   }
-  const maxTok = skills[0].max_output_tokens;
+  const maxTok = skills[0].max_output_tokens || 1;
   el.innerHTML = skills.map(s => {
     const pct = Math.round(s.max_output_tokens / maxTok * 100);
     return `<div class="tool-row">
@@ -676,7 +677,7 @@ function renderMcp(mcp) {
     el.innerHTML = '<div style="color:#444;font-size:11px;padding:4px 0">No MCP usage in this range</div>';
     return;
   }
-  const maxTok = mcp[0].max_output_tokens;
+  const maxTok = mcp[0].max_output_tokens || 1;
   el.innerHTML = mcp.map(m => {
     const pct = Math.round(m.max_output_tokens / maxTok * 100);
     return `<div class="tool-row">
