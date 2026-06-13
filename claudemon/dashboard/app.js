@@ -586,7 +586,10 @@ function renderFooter(stats, config) {
 
 function initCollapsibles() {
   document.querySelectorAll('.csec-hdr').forEach(hdr => {
-    hdr.addEventListener('click', () => hdr.closest('.csec').classList.toggle('open'));
+    hdr.addEventListener('click', () => {
+      hdr.closest('.csec').classList.toggle('open');
+      saveCollapseState();
+    });
   });
 }
 
@@ -625,6 +628,19 @@ function renderMcp(mcp) {
 }
 
 let currentRange = '7d';
+let _stateRestored = false;
+
+function saveCollapseState() {
+  const state = {};
+  document.querySelectorAll('.csec[data-section-id]').forEach(el => {
+    state[el.dataset.sectionId] = el.classList.contains('open');
+  });
+  fetch('/api/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ section_collapse_state: state }),
+  });
+}
 
 async function refresh() {
   const [stats, timeline, tasks, queriesData, sessions, config, tools] = await Promise.all([
