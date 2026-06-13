@@ -280,6 +280,7 @@ footer {
 }
 .csec-hdr:hover { background: rgba(255,255,255,0.02); }
 .csec-title {
+  flex: 1;
   font-size: 12px;
   font-weight: 600;
   color: #888;
@@ -323,3 +324,17 @@ footer {
 .tool-meta { font-size: 12px; color: #777; white-space: nowrap; }
 .skill-fill { background: #4ade80; }
 .mcp-fill   { background: #38bdf8; }
+
+/* ── Drag-to-reorder ───────────────────────────────── */
+.drag-handle {
+  color: #333;
+  cursor: grab;
+  user-select: none;
+  margin-right: 6px;
+  font-size: 14px;
+  line-height: 1;
+}
+.drag-handle:active { cursor: grabbing; }
+.csec.dragging { opacity: 0.4; }
+.csec.drag-over-top    { border-top:    2px solid #a78bfa; }
+.csec.drag-over-bottom { border-bottom: 2px solid #a78bfa; }
