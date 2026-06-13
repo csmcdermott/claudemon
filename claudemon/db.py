@@ -477,6 +477,6 @@ def query_tool_usage(
         }
         (skills if tool_type == "skill" else mcp).append(entry)
 
-    skills.sort(key=lambda x: x["calls"], reverse=True)
-    mcp.sort(key=lambda x: x["calls"], reverse=True)
+    skills.sort(key=lambda x: x["max_output_tokens"], reverse=True)
+    mcp.sort(key=lambda x: x["max_output_tokens"], reverse=True)
     return {"skills": skills, "mcp": mcp}

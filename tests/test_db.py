@@ -239,7 +239,7 @@ def test_query_tool_usage_basic(conn):
     db.insert_tool_use(conn, "s1", "s1:1:3", now - 2000, "skill", "tdd", 800)
     db.insert_tool_use(conn, "s1", "s1:1:1", now - 4000, "mcp", "playwright", 500)
     result = db.query_tool_usage(conn, (now - 10_000, now))
-    # brainstorming has 2 calls, tdd has 1 — sorted descending by calls
+    # brainstorming max_output_tokens=1000, tdd max=800 — sorted descending by max_output_tokens
     assert result["skills"][0]["name"] == "brainstorming"
     assert result["skills"][0]["calls"] == 2
     assert result["skills"][1]["name"] == "tdd"
@@ -260,3 +260,17 @@ def test_query_tool_usage_p50_max(conn):
     # sorted [500, 1000, 2000]; n=3; (3-1)//2 = 1; p50 = 1000
     assert skill["p50_output_tokens"] == 1000
     assert skill["max_output_tokens"] == 2000
+
+
+def test_query_tool_usage_sorted_by_max_tokens(conn):
+    now = int(time.time() * 1000)
+    db.upsert_session(conn, "s1", "proj", None, now - 5000, now, "main")
+    # "alpha": 2 calls, small tokens (max 200)
+    # "beta":  1 call,  large tokens (max 500)
+    # sorted by calls: alpha first; sorted by max_output_tokens: beta first
+    db.insert_tool_use(conn, "s1", "s1:1:1", now - 4000, "skill", "alpha", 100)
+    db.insert_tool_use(conn, "s1", "s1:1:2", now - 3000, "skill", "alpha", 200)
+    db.insert_tool_use(conn, "s1", "s1:1:3", now - 2000, "skill", "beta", 500)
+    result = db.query_tool_usage(conn, (now - 10_000, now))
+    assert result["skills"][0]["name"] == "beta"
+    assert result["skills"][1]["name"] == "alpha"
