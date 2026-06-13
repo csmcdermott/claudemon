@@ -4,6 +4,8 @@
 
 | Date | Context | What went wrong | Rule learned |
 | --- | --- | --- | --- |
+| 2026-06-13 | dashboard/app.js drag handle | Drag handle span is inside `.csec-hdr` which has a click listener for collapse toggle. A short click on the handle fired the collapse toggle, fighting the user's intent. | When adding an interactive child element inside a click-wired parent, add `e.stopPropagation()` to the child's `click` listener to prevent unintended parent actions. |
+| 2026-06-13 | dashboard/app.js bar width | `const maxTok = list[0].max_output_tokens` then `item.max_output_tokens / maxTok * 100` — if the first item has `max_output_tokens === 0`, `maxTok` is 0 and `pct` is `NaN`. Browsers silently ignore `width:NaN%` so no bars render. | When computing a divisor from data, guard against zero: `const maxTok = list[0].max_output_tokens \|\| 1`. Apply any time you divide by a value derived from user/API data. |
 | 2026-06-07 | server.py `do_POST` | Compared `self.path == "/api/quit"` — but `self.path` includes query string (e.g. `/api/quit?x=1`), so POST with any param silently falls to 404 | Always parse `urlparse(self.path).path` before comparing paths in `do_GET` and `do_POST` |
 | 2026-06-07 | server.py port=0 | Used a temp socket to find a free port, closed it, then bound HTTPServer — TOCTOU race; another process could steal the port between close and bind | Pass `port=0` directly to `HTTPServer`; read `server.server_address[1]` for the bound port |
 | 2026-06-07 | indexer.py query_id fallback | When no user message seen yet (`task_num == 0`), fallback was `f"{short_id}:{task_num}:1"` → `abc:0:1` while task_id was `abc:1` — inconsistent IDs | Fallback must be `f"{short_id}:1:1"` — hardcode `:1:` not `:task_num:` |

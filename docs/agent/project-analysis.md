@@ -5,7 +5,7 @@
 | **Project name** | claudemon |
 | **Purpose** | macOS menu bar app to monitor Claude Code usage in real time — token counts, cache hit rates, query/task analytics, active session state |
 | **Target release** | v1.0 (personal use) |
-| **Last updated** | 2026-06-09 (v0.3.0: removed weekly budget panel, added usage-bar hover tooltips, ◆→✱ orange icon, XSS escape, ThreadingHTTPServer, padBuckets DRY, 5 new tests) |
+| **Last updated** | 2026-06-13 (v0.5.12: sort skills/MCP by max tokens, persist collapse state + section order to config, drag-to-reorder sections with HTML5 D&D) |
 
 ## Tech Stack
 
@@ -39,6 +39,7 @@ macOS layer (rumps + PyObjC)  →  Data layer (watchdog + indexer + SQLite)  →
 - All time bucketing uses local-timezone offsets (`_tz_offset_ms()` in server.py, `_local_trunc()` in db.py) so day/hour chart labels match the user's clock
 - "Today" view shows stat counters instead of charts; `day:TIMESTAMP` range enables drill-down from multi-day chart click
 - **py2app bundle**: `setup.py` with `LSUIElement: True` plist. `app.py` uses `sys.frozen` + `NSBundle.mainBundle().resourcePath()` to find dashboard in bundled mode. `just build` → `dist/claudemon.app`; `just install-app` → /Applications/.
+- **Dashboard section state** (2026-06-13): Collapse state (`section_collapse_state`) and section order (`section_order`) are persisted to `~/.claudemon/config.json` via `POST /api/config` and restored on first `refresh()` via `_stateRestored` flag. Drag-to-reorder uses native HTML5 D&D with a `fromHandle` guard so drags only start from the `⠿` handle, not from body text.
 
 ## Directory Structure
 
@@ -129,7 +130,7 @@ Implementation plan: `docs/superpowers/plans/2026-06-07-claudemon.md`
 | 2026-06-09 | Testing — timeout | No `pytest-timeout` configured; a hung server thread would stall the suite indefinitely. Deferred per CLAUDE.md "Minimal Dependencies" rule — pending approval to add the dev-dep. |
 | 2026-06-09 | Security — CSRF | `/api/quit` and `/api/config` POST have no Origin check. Any localhost-accessible browser tab can kill the app or rewrite persistent config. Fix: validate `Origin` header against `http://127.0.0.1:<our-port>` (or empty for WKWebView). |
 | 2026-06-09 | Security — error leak | `server.py` `_json_error(500, str(exc))` echoes exception messages into responses, leaking file paths and internal types. Fix: log details server-side via `log.exception`, return a fixed `"internal error"` body. |
-| 2026-06-09 | Security — config POST | `/api/config` POST: (a) `int(Content-Length)` accepts negative values, allowing `rfile.read(-1)` to read until EOF; (b) any JSON keys are merged into persistent config — no allowlist. Fix: clamp length to ≤64 KiB; validate keys against `{weekly_output_budget, task_gap_minutes, server_port}`. |
+| 2026-06-09 | Security — config POST | `/api/config` POST: (a) `int(Content-Length)` accepts negative values, allowing `rfile.read(-1)` to read until EOF; (b) any JSON keys are merged into persistent config — no allowlist. Fix: clamp length to ≤64 KiB; validate keys against `{weekly_output_budget, task_gap_minutes, server_port, section_collapse_state, section_order}`. (Updated 2026-06-13: allowlist must now include new dashboard UX keys.) |
 | 2026-06-09 | Security — input validation | `_range_to_timestamps("custom:...")` raises ValueError/IndexError on malformed input, caught only by the generic 500 handler. Fix: validate format and return 400. |
 | 2026-06-09 | Security — SRI | `dashboard/index.html:8` loads Chart.js from jsdelivr without Subresource Integrity. If the CDN is compromised, arbitrary JS runs in the WKWebView. Fix: add `integrity="sha384-..."` + `crossorigin="anonymous"`, or vendor `chart.js` into `dashboard/`. |
 | 2026-06-09 | Security — deps | Runtime deps in `pyproject.toml` are unpinned (`rumps>=0.4.0`, `watchdog>=4.0.0`, `pyobjc-framework-WebKit>=10.0`). A future bad release would be silently picked up. Fix: pin with `~=` or commit a lock file (`uv lock` / `pip-compile`). |
@@ -172,6 +173,12 @@ The pre-commit hook (`scripts/pre-commit.sh`) auto-bumps patch on every commit. 
 
 | Date | File / Area | What changed |
 | --- | --- | --- |
+| 2026-06-13 | v0.5.12 release | Sort skills/MCP by max_output_tokens; persist section collapse state + order to config; drag-to-reorder with HTML5 D&D |
+| 2026-06-13 | claudemon/db.py | `query_tool_usage`: sort key changed from `calls` to `max_output_tokens` for both skills and mcp |
+| 2026-06-13 | dashboard/index.html | Added `data-section-id` to each `.csec`; added `<span class="drag-handle">⠿</span>` as first child of each `.csec-hdr` |
+| 2026-06-13 | dashboard/style.css | Added `flex: 1` to `.csec-title`; added `.drag-handle`, `.csec.dragging`, `.csec.drag-over-top`, `.csec.drag-over-bottom` rules |
+| 2026-06-13 | dashboard/app.js | Added `_stateRestored` flag, `saveCollapseState()`, `saveSectionOrder()`, `applySectionOrder()`, `initDragDrop()`; updated `initCollapsibles()` and `refresh()` for state restore on first call; updated `renderSkills`/`renderMcp` bar widths to use `max_output_tokens`; fixed handle click stopPropagation; guarded `maxTok \|\| 1` for zero-token case |
+| 2026-06-13 | tests/test_db.py | Added `test_query_tool_usage_sorted_by_max_tokens`; updated stale comment in `test_query_tool_usage_basic` |
 | 2026-06-09 | v0.3.0 release | Bumped minor: removed weekly budget panel, added usage-bar hover tooltips, icon change |
 | 2026-06-09 | dashboard/index.html | Removed budget `<section>`; added `id="usage-5h-track"` / `id="usage-7d-track"` for hover tooltips |
 | 2026-06-09 | dashboard/style.css | Removed `.budget-*` rules |
