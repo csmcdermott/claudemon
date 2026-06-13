@@ -680,6 +680,19 @@ async function refresh() {
     api.tools(currentRange),
   ]);
 
+  if (!_stateRestored) {
+    applySectionOrder(config.section_order);
+    if (config.section_collapse_state) {
+      document.querySelectorAll('.csec[data-section-id]').forEach(el => {
+        const id = el.dataset.sectionId;
+        if (id in config.section_collapse_state) {
+          el.classList.toggle('open', config.section_collapse_state[id]);
+        }
+      });
+    }
+    _stateRestored = true;
+  }
+
   setViewMode(currentRange);
   renderStats(stats);
 
