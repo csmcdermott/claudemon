@@ -642,6 +642,33 @@ function saveCollapseState() {
   });
 }
 
+function saveSectionOrder() {
+  const order = [...document.querySelectorAll('.csec[data-section-id]')]
+    .map(el => el.dataset.sectionId);
+  fetch('/api/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ section_order: order }),
+  });
+}
+
+function applySectionOrder(order) {
+  if (!order || !order.length) return;
+  const footer = document.querySelector('footer');
+  const map = {};
+  document.querySelectorAll('.csec[data-section-id]').forEach(el => {
+    map[el.dataset.sectionId] = el;
+  });
+  const seen = new Set();
+  order.forEach(id => {
+    if (map[id]) { footer.before(map[id]); seen.add(id); }
+  });
+  // Append sections not present in the saved order (forward-compatibility).
+  Object.entries(map).forEach(([id, el]) => {
+    if (!seen.has(id)) footer.before(el);
+  });
+}
+
 async function refresh() {
   const [stats, timeline, tasks, queriesData, sessions, config, tools] = await Promise.all([
     api.stats(currentRange),
