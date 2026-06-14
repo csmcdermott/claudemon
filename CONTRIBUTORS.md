@@ -20,7 +20,7 @@ just install-hooks  # install pre-commit + pre-push hooks
 ```bash
 just lint        # run ruff linter
 just test        # run test suite
-just coverage    # run tests with coverage report (must stay ≥ 80%)
+just coverage    # run tests with coverage report (must stay >= 80%)
 ```
 
 The pre-push hook blocks pushes when lint, coverage, or tests fail.
@@ -34,8 +34,15 @@ The pre-push hook blocks pushes when lint, coverage, or tests fail.
 
 ## Versioning
 
-The pre-commit hook automatically bumps the patch version on every commit — you don't need to do anything for fixes.
+The pre-commit hook bumps the patch version automatically on every commit. No action needed for fixes.
 
 Before committing a new feature, run `just bump-minor` first. Before a breaking change, run `just bump-major`.
 
-Never edit `pyproject.toml` or `claudemon/_version.py` manually — always use the bump scripts.
+Never edit `pyproject.toml` or `claudemon/_version.py` manually; always use the bump scripts.
+
+## Releasing
+
+```bash
+just bump-minor   # for a feature release
+just release      # builds .app, zips it, and publishes to GitHub releases
+```

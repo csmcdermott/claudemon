@@ -49,6 +49,7 @@ _Promoted from Correction Log after applying in a second session._
 
 ## Project-Specific Gotchas
 
+- **Packaging .app for GitHub release (2026-06-13)**: Use `ditto -c -k --sequesterRsrc --keepParent dist/claudemon.app dist/claudemon-vX.Y.Z.zip`. Plain `zip -r` drops resource forks and extended attributes that macOS apps depend on. The `just release` recipe uses `ditto`.
 - **Claude Code JSONL record types**: `assistant`, `user`, `system`, `ai-title`, `attachment`, `last-prompt`, `mode`, `permission-mode`, `file-history-snapshot`. Only `assistant` records have token usage data.
 - **Token usage location**: `message.usage` inside assistant records — not top-level. Fields: `input_tokens`, `output_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens`.
 - **Cache reads not split by tier**: `cache_read_input_tokens` is a total. Only writes are split: `cache_creation.ephemeral_1h_input_tokens` and `cache_creation.ephemeral_5m_input_tokens`.

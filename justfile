@@ -31,15 +31,15 @@ coverage:
 
 # ── Versioning ────────────────────────────────────────────────────────────────
 
-# Bump patch version (0.2.0 → 0.2.1) — also run automatically by pre-commit hook
+# Bump patch version (0.2.0 → 0.2.1); pre-commit hook also runs this automatically
 bump-patch:
     python3 scripts/bump_version.py patch
 
-# Bump minor version (0.2.0 → 0.3.0) — run before committing a new feature
+# Bump minor version (0.2.0 → 0.3.0); run before committing a new feature
 bump-minor:
     python3 scripts/bump_version.py minor
 
-# Bump major version (0.2.0 → 1.0.0) — run before a breaking change
+# Bump major version (0.2.0 → 1.0.0); run before a breaking change
 bump-major:
     python3 scripts/bump_version.py major
 
@@ -55,6 +55,17 @@ install-app: build
     rm -rf /Applications/claudemon.app
     cp -r dist/claudemon.app /Applications/claudemon.app
     @echo "Installed to /Applications/claudemon.app"
+
+# Build, zip, and publish a GitHub release for the current version
+release: build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    version=$(python3 -c "import claudemon._version as v; print(v.__version__)")
+    tag="v${version}"
+    zip="dist/claudemon-${tag}.zip"
+    ditto -c -k --sequesterRsrc --keepParent dist/claudemon.app "$zip"
+    gh release create "$tag" "$zip" --title "$tag" --generate-notes
+    echo "Released $tag"
 
 # ── Internal ──────────────────────────────────────────────────────────────────
 

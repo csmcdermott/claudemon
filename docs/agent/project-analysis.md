@@ -5,7 +5,7 @@
 | **Project name** | claudemon |
 | **Purpose** | macOS menu bar app to monitor Claude Code usage in real time — token counts, cache hit rates, query/task analytics, active session state |
 | **Target release** | v1.0 (personal use) |
-| **Last updated** | 2026-06-13 (v0.5.12: sort skills/MCP by max tokens, persist collapse state + section order to config, drag-to-reorder sections with HTML5 D&D) |
+| **Last updated** | 2026-06-13 (v0.5.13: semver + just release workflow; GitHub releases with .app asset; docs updated) |
 
 ## Tech Stack
 
@@ -173,6 +173,7 @@ The pre-commit hook (`scripts/pre-commit.sh`) auto-bumps patch on every commit. 
 
 | Date | File / Area | What changed |
 | --- | --- | --- |
+| 2026-06-13 | v0.5.13 release | Grouped justfile recipes; added `just release` (build + zip with ditto + gh release create); GitHub release v0.5.13 published with .app asset; README updated with Download section + config table; CONTRIBUTORS.md updated with release workflow; TODO.md config allowlist corrected |
 | 2026-06-13 | v0.5.12 release | Sort skills/MCP by max_output_tokens; persist section collapse state + order to config; drag-to-reorder with HTML5 D&D |
 | 2026-06-13 | claudemon/db.py | `query_tool_usage`: sort key changed from `calls` to `max_output_tokens` for both skills and mcp |
 | 2026-06-13 | dashboard/index.html | Added `data-section-id` to each `.csec`; added `<span class="drag-handle">⠿</span>` as first child of each `.csec-hdr` |

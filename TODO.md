@@ -17,7 +17,7 @@ is not exposed to the network), but should be addressed before wider distributio
 
 - **Config POST not hardened** — `int(Content-Length)` accepts negative values (`rfile.read(-1)`
   reads to EOF); no key allowlist on the JSON body. Fix: clamp length to ≤ 64 KiB; validate keys
-  against `{task_gap_minutes}`.
+  against `{task_gap_minutes, section_collapse_state, section_order}`.
 
 - **Custom range input not validated** — `_range_to_timestamps("custom:...")` raises
   `ValueError`/`IndexError` on malformed input, caught only by the generic 500 handler. Fix:

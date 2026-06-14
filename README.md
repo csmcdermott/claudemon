@@ -13,6 +13,12 @@ rate-limit utilization — all from a floating dashboard that lives next to your
 - Python 3.11+
 - [just](https://github.com/casey/just) (task runner)
 
+## Download
+
+Grab the latest prebuilt `.app` from the [releases page](https://github.com/csmcdermott/claudemon/releases).
+
+Unzip and double-click to run. The first launch of an unsigned bundle requires right-click → Open to bypass Gatekeeper.
+
 ## Install from source
 
 ```bash
@@ -28,19 +34,20 @@ The menu bar icon appears and starts monitoring `~/.claude/projects/` immediatel
 ## Build a standalone .app bundle
 
 ```bash
-just build          # → dist/claudemon.app
-just install-app    # build and copy to /Applications/claudemon.app
+just build          # builds dist/claudemon.app
+just install-app    # builds and copies to /Applications/claudemon.app
+just release        # builds, zips, and publishes a GitHub release
 ```
-
-The first launch of an unsigned bundle requires right-click → Open to bypass Gatekeeper.
 
 ## Configuration
 
-Settings are stored in `~/.claudemon/config.json` and created automatically on first run.
+Settings live in `~/.claudemon/config.json` and are created automatically on first run.
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `task_gap_minutes` | `30` | Idle time (minutes) used to separate adjacent tasks |
+| `task_gap_minutes` | `30` | Idle time in minutes used to separate adjacent tasks |
+| `section_collapse_state` | `{}` | Collapsed/expanded state for each dashboard section |
+| `section_order` | `[]` | Dashboard section order set by drag-to-reorder |
 
 ## Contributing
 
