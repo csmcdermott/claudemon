@@ -505,3 +505,74 @@ def test_quit_endpoint_sends_sigterm(server):
 
         assert called.get("pid") == os.getpid()
         assert called.get("sig") == signal.SIGTERM
+
+
+# ── /api/update-status tests ──────────────────────────────────────────────────
+
+
+def test_update_status_idle(server):
+    data = _get(server + "/api/update-status")
+    assert data == {"state": "idle", "error": None}
+
+
+def test_update_status_reflects_updater_state(server):
+    updater._update_status["state"] = "failed"
+    updater._update_status["error"] = "ditto exit 1"
+    data = _get(server + "/api/update-status")
+    assert data["state"] == "failed"
+    assert data["error"] == "ditto exit 1"
+
+
+# ── /api/update tests ─────────────────────────────────────────────────────────
+
+
+def test_update_post_no_csrf_returns_403(server):
+    req = urllib.request.Request(server + "/api/update", data=b"", method="POST")
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        urllib.request.urlopen(req)
+    assert exc.value.code == 403
+
+
+def test_update_post_not_frozen_returns_400(server):
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        _post(server + "/api/update")
+    assert exc.value.code == 400
+
+
+def test_update_post_no_update_in_cache_returns_400(server):
+    with patch.object(_sys, "frozen", True, create=True):
+        with pytest.raises(urllib.error.HTTPError) as exc:
+            _post(server + "/api/update")
+    assert exc.value.code == 400
+
+
+def test_update_post_asset_url_none_returns_400(server):
+    updater._update_cache["data"] = {
+        "available": True, "version": "99.0.0", "asset_url": None
+    }
+    updater._update_cache["checked_at"] = time.time()
+    with patch.object(_sys, "frozen", True, create=True):
+        with pytest.raises(urllib.error.HTTPError) as exc:
+            _post(server + "/api/update")
+    assert exc.value.code == 400
+
+
+def test_update_post_starts_thread(server):
+    updater._update_cache["data"] = {
+        "available": True,
+        "version": "99.0.0",
+        "asset_url": "https://objects.githubusercontent.com/foo/bar.zip",
+    }
+    updater._update_cache["checked_at"] = time.time()
+
+    with patch.object(_sys, "frozen", True, create=True), \
+         patch("claudemon.updater.perform_update") as mock_perform:
+        result = _post(server + "/api/update")
+
+    assert result == {"status": "started"}
+    deadline = time.time() + 1.0
+    while time.time() < deadline and not mock_perform.called:
+        time.sleep(0.01)
+    mock_perform.assert_called_once_with(
+        "https://objects.githubusercontent.com/foo/bar.zip"
+    )

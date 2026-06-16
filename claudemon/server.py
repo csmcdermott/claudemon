@@ -193,6 +193,9 @@ def _make_handler(
                     public = {k: v for k, v in state.items() if k != "asset_url"}
                     self._json({**public, "bundle": bool(getattr(sys, "frozen", False))})
 
+                elif parsed.path == "/api/update-status":
+                    self._json(updater.get_update_status())
+
                 else:
                     self._json_error(404, "not found")
 
@@ -210,6 +213,22 @@ def _make_handler(
                     target=lambda: os.kill(os.getpid(), signal.SIGTERM),
                     daemon=True,
                 ).start()
+                return
+
+            if path == "/api/update":
+                if not getattr(sys, "frozen", False):
+                    self._json_error(400, "Update only available in .app bundle")
+                    return
+                asset_url = updater.get_update_asset_url()
+                if asset_url is None:
+                    self._json_error(400, "No update available")
+                    return
+                threading.Thread(
+                    target=updater.perform_update,
+                    args=(asset_url,),
+                    daemon=False,
+                ).start()
+                self._json({"status": "started"})
                 return
 
             if path != "/api/config":
