@@ -756,11 +756,14 @@ function renderUpdateBanner(data) {
   } else {
     confirmBtn.style.display = 'none';
     dismissBtn.style.display = 'none';
+    const actions = document.getElementById('update-actions');
+    actions.querySelectorAll('.update-dev-note').forEach(n => n.remove());
     const note = document.createElement('span');
+    note.className = 'update-dev-note';
     note.textContent = 'Run just build && just install-app to update.';
     note.style.color = 'var(--muted)';
     note.style.fontSize = '12px';
-    document.getElementById('update-actions').appendChild(note);
+    actions.appendChild(note);
   }
 
   banner.classList.remove('hidden');

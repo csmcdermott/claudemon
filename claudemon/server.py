@@ -189,8 +189,8 @@ def _make_handler(
                     self._json(db.query_tool_usage(conn, range_ts))
 
                 elif parsed.path == "/api/update-check":
-                    state = updater.check_for_updates()
-                    public = {k: v for k, v in state.items() if k != "asset_url"}
+                    updater.check_for_updates()
+                    public = updater.get_update_state_for_response()
                     self._json({**public, "bundle": bool(getattr(sys, "frozen", False))})
 
                 elif parsed.path == "/api/update-status":

@@ -456,6 +456,8 @@ def test_tools_endpoint_with_data(tools_server):
 
 
 def test_update_check_shape(server):
+    updater._update_cache["data"] = {"available": False, "version": "0.0.0"}
+    updater._update_cache["checked_at"] = time.time()
     data = _get(server + "/api/update-check")
     assert "available" in data
     assert "bundle" in data
@@ -463,11 +465,15 @@ def test_update_check_shape(server):
 
 
 def test_update_check_bundle_flag_is_false_in_test(server):
+    updater._update_cache["data"] = {"available": False, "version": "0.0.0"}
+    updater._update_cache["checked_at"] = time.time()
     data = _get(server + "/api/update-check")
     assert data["bundle"] is False
 
 
 def test_update_check_bundle_flag_true_when_frozen(server):
+    updater._update_cache["data"] = {"available": False, "version": "0.0.0"}
+    updater._update_cache["checked_at"] = time.time()
     with patch.object(_sys, "frozen", True, create=True):
         data = _get(server + "/api/update-check")
     assert data["bundle"] is True
