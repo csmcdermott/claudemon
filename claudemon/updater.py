@@ -9,6 +9,8 @@ from claudemon._version import __version__ as _APP_VERSION
 
 GITHUB_REPO = "csmcdermott/claudemon"
 CACHE_TTL = 3_600  # 1 hour
+# URLs served by GitHub releases redirect through objects.githubusercontent.com.
+# Both hosts are validated in perform_update before download.
 _TRUSTED_HOSTS = frozenset({"github.com", "objects.githubusercontent.com"})
 
 _update_cache: dict = {"data": None, "checked_at": None}
@@ -23,7 +25,11 @@ def _parse_version(tag: str) -> tuple[int, ...]:
 
 
 def check_for_updates() -> dict:
-    """Return update state, hitting GitHub API at most once per CACHE_TTL."""
+    """Return update state, hitting GitHub API at most once per CACHE_TTL.
+
+    Two simultaneous cache-miss callers may both hit the GitHub API — benign,
+    the last writer wins and the cache catches up (same pattern as _handle_usage).
+    """
     with _UPDATE_LOCK:
         now = time.time()
         if (
@@ -58,6 +64,8 @@ def check_for_updates() -> dict:
         )
         asset_url = zip_asset["browser_download_url"] if zip_asset else None
 
+        # asset_url is validated against _TRUSTED_HOSTS in perform_update
+        # before any network request is made to that URL.
         if latest > current:
             result = {
                 "available": True,
@@ -67,7 +75,9 @@ def check_for_updates() -> dict:
         else:
             result = {"available": False, "version": _APP_VERSION}
 
-    except Exception:
+    except (urllib.error.URLError, urllib.error.HTTPError, OSError):
+        result = {"available": False}
+    except (json.JSONDecodeError, ValueError, KeyError):
         result = {"available": False}
 
     with _UPDATE_LOCK:
