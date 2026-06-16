@@ -107,3 +107,57 @@ def test_check_for_updates_null_assets():
         result = updater.check_for_updates()
     assert result["available"] is True
     assert result["asset_url"] is None
+
+
+# --- get_update_asset_url ---
+
+def test_get_update_asset_url_empty_cache():
+    assert updater.get_update_asset_url() is None
+
+
+def test_get_update_asset_url_no_update():
+    updater._update_cache["data"] = {"available": False, "version": "0.5.0"}
+    assert updater.get_update_asset_url() is None
+
+
+def test_get_update_asset_url_asset_none():
+    updater._update_cache["data"] = {
+        "available": True, "version": "99.0.0", "asset_url": None
+    }
+    assert updater.get_update_asset_url() is None
+
+
+def test_get_update_asset_url_returns_url():
+    updater._update_cache["data"] = {
+        "available": True,
+        "version": "99.0.0",
+        "asset_url": "https://objects.githubusercontent.com/foo/bar.zip",
+    }
+    assert updater.get_update_asset_url() == (
+        "https://objects.githubusercontent.com/foo/bar.zip"
+    )
+
+
+# --- get_update_state_for_response ---
+
+def test_get_update_state_for_response_excludes_asset_url():
+    updater._update_cache["data"] = {
+        "available": True,
+        "version": "99.0.0",
+        "asset_url": "https://objects.githubusercontent.com/foo/bar.zip",
+    }
+    result = updater.get_update_state_for_response()
+    assert "asset_url" not in result
+    assert result["available"] is True
+    assert result["version"] == "99.0.0"
+
+
+def test_get_update_state_for_response_empty_cache():
+    result = updater.get_update_state_for_response()
+    assert result == {"available": False}
+
+
+# --- get_update_status ---
+
+def test_get_update_status_initial():
+    assert updater.get_update_status() == {"state": "idle", "error": None}

@@ -85,3 +85,25 @@ def check_for_updates() -> dict:
         _update_cache["checked_at"] = time.time()
 
     return dict(result)
+
+
+def get_update_asset_url() -> str | None:
+    """Return the cached asset download URL if an update is available, else None."""
+    with _UPDATE_LOCK:
+        data = _update_cache.get("data") or {}
+    if data.get("available") and data.get("asset_url"):
+        return data["asset_url"]
+    return None
+
+
+def get_update_state_for_response() -> dict:
+    """Return cached update state without asset_url (safe for HTTP responses)."""
+    with _UPDATE_LOCK:
+        data = _update_cache.get("data") or {"available": False}
+    return {k: v for k, v in data.items() if k != "asset_url"}
+
+
+def get_update_status() -> dict:
+    """Return current update process status."""
+    with _UPDATE_LOCK:
+        return dict(_update_status)
