@@ -5,8 +5,8 @@ A macOS menu bar app that monitors your [Claude Code](https://claude.ai/code) us
 Tracks token consumption, cache hit rates, query history, active session state, and
 rate-limit utilization — all from a floating dashboard that lives next to your clock.
 
-<img width="631" height="933" alt="image" src="https://github.com/user-attachments/assets/46239b7e-5877-46bf-93f0-9ec4327ec17a" />
-<img width="631" height="933" alt="image" src="https://github.com/user-attachments/assets/7b3b95b5-bb0b-4d13-844c-7061a243b1b3" />
+<img width="526" height="891" alt="image" src="https://github.com/user-attachments/assets/ed630fbf-e503-4cbe-be2e-1227f44c6dc0" />
+
 
 ## Requirements
 
