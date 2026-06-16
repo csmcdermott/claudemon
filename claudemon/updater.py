@@ -1,9 +1,17 @@
 # claudemon/updater.py
 import json
+import os
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
 import threading
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
+from urllib.parse import urlparse
 
 from claudemon._version import __version__ as _APP_VERSION
 
@@ -107,3 +115,58 @@ def get_update_status() -> dict:
     """Return current update process status."""
     with _UPDATE_LOCK:
         return dict(_update_status)
+
+
+def perform_update(asset_url: str) -> None:  # pragma: no cover
+    """Download, extract, install update to /Applications/claudemon.app, relaunch, quit.
+
+    Runs in a non-daemon thread. If running from a path other than
+    /Applications/claudemon.app (e.g. dist/), creates a new copy there.
+    """
+    with _UPDATE_LOCK:
+        _update_status["state"] = "running"
+        _update_status["error"] = None
+
+    try:
+        parsed = urlparse(asset_url)
+        if parsed.scheme != "https" or parsed.netloc not in _TRUSTED_HOSTS:
+            raise ValueError(f"Untrusted asset URL: {asset_url}")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            zip_path = tmp_path / "claudemon.zip"
+
+            req = urllib.request.Request(
+                asset_url, headers={"User-Agent": "claudemon"}
+            )
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                zip_path.write_bytes(resp.read())
+
+            subprocess.run(
+                ["ditto", "-x", "-k", str(zip_path), tmp],
+                check=True,
+            )
+
+            app_tmp = tmp_path / "claudemon.app"
+            if not app_tmp.is_dir() or app_tmp.is_symlink():
+                raise RuntimeError(
+                    f"Extracted bundle is not a real directory: {app_tmp}"
+                )
+
+            subprocess.run(
+                ["ditto", str(app_tmp), "/Applications/claudemon.app"],
+                check=True,
+            )
+
+            # Explicit cleanup before SIGTERM — TemporaryDirectory.__exit__
+            # won't run after os.kill terminates the process.
+            shutil.rmtree(tmp, ignore_errors=True)
+
+        subprocess.Popen(["open", "/Applications/claudemon.app"])
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    except Exception as exc:
+        print(f"[claudemon] update failed: {exc}", file=sys.stderr)
+        with _UPDATE_LOCK:
+            _update_status["state"] = "failed"
+            _update_status["error"] = str(exc)
