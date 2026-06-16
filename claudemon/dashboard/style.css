@@ -338,3 +338,59 @@ footer {
 .csec.dragging { opacity: 0.4; }
 .csec.drag-over-top    { border-top:    2px solid #a78bfa; }
 .csec.drag-over-bottom { border-bottom: 2px solid #a78bfa; }
+
+/* ── Update banner ────────────────────────────────────────────────────── */
+.update-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: rgba(59, 130, 246, 0.12);
+  border-bottom: 1px solid rgba(59, 130, 246, 0.25);
+  font-size: 13px;
+  color: var(--text);
+}
+
+.update-banner #update-msg {
+  flex: 1;
+}
+
+#update-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.update-btn {
+  font-size: 12px;
+  padding: 3px 10px;
+  background: #3b82f6;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.update-btn:hover {
+  background: #2563eb;
+}
+
+.update-dismiss {
+  font-size: 14px;
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 2px 6px;
+  line-height: 1;
+}
+
+.update-dismiss:hover {
+  color: var(--text);
+}
+
+#update-progress {
+  flex: 1;
+  font-size: 12px;
+  color: var(--muted);
+}
