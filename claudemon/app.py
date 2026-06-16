@@ -74,7 +74,7 @@ class ClaudemonApp(rumps.App):
         logging.info("Dashboard at http://127.0.0.1:%d", self._port)
 
         # Status item
-        self._status = StatusItem(self._conn, self)
+        self._status = StatusItem(self._conn, self, port=self._port)
 
         # Popover
         self._popover = Popover(self._port)
