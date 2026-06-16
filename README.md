@@ -6,6 +6,7 @@ Tracks token consumption, cache hit rates, query history, active session state, 
 rate-limit utilization — all from a floating dashboard that lives next to your clock.
 
 <img width="526" height="891" alt="image" src="https://github.com/user-attachments/assets/ed630fbf-e503-4cbe-be2e-1227f44c6dc0" />
+<img width="528" height="887" alt="image" src="https://github.com/user-attachments/assets/29f4a100-18dd-453a-9804-08f57f217546" />
 
 
 ## Requirements
