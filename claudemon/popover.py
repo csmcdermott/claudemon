@@ -9,13 +9,17 @@ from AppKit import (
     NSWindowStyleMaskResizable,
     NSWindowStyleMaskTitled,
 )
-from Foundation import NSURL, NSURLRequest, NSURLRequestReloadIgnoringLocalCacheData
+from Foundation import NSURL, NSURLRequest, NSURLRequestReloadIgnoringLocalCacheData, NSUserDefaults
 from WebKit import WKWebsiteDataStore, WKWebView, WKWebViewConfiguration
 
 log = logging.getLogger(__name__)
 
 # NSViewWidthSizable | NSViewHeightSizable
 _AUTORESIZE = 18
+
+_FRAME_AUTOSAVE_NAME = "claudemon.panel"
+# Key NSWindow uses in NSUserDefaults when autosave name is set
+_FRAME_DEFAULTS_KEY = f"NSWindow Frame {_FRAME_AUTOSAVE_NAME}"
 
 
 class Popover:
@@ -28,6 +32,7 @@ class Popover:
         self._url = f"http://127.0.0.1:{port}/"
         self._panel = None
         self._webview = None
+        self._frame_set = False  # True once initial frame decision has been made
         # Defer panel creation to first show so NSApp is fully running.
 
     def _ensure_panel(self) -> None:
@@ -49,6 +54,9 @@ class Popover:
             panel.setTitle_("claudemon")
             panel.setReleasedWhenClosed_(False)
             panel.setHidesOnDeactivate_(False)
+            # Auto-saves frame to NSUserDefaults on every move/resize and on close.
+            # Also restores the saved frame immediately if one exists.
+            panel.setFrameAutosaveName_(_FRAME_AUTOSAVE_NAME)
 
             config = WKWebViewConfiguration.alloc().init()
             config.setWebsiteDataStore_(WKWebsiteDataStore.nonPersistentDataStore())
@@ -83,11 +91,19 @@ class Popover:
         )
         self._webview.loadRequest_(req)
 
-        try:
-            self._position_near_button(button)
-        except Exception:
-            log.exception("popover: position failed, using fallback")
-            self._position_fallback()
+        if not self._frame_set:
+            self._frame_set = True
+            if NSUserDefaults.standardUserDefaults().stringForKey_(_FRAME_DEFAULTS_KEY):
+                # setFrameAutosaveName_ already restored the saved frame — just
+                # make sure it's still on a connected screen (handles removed displays).
+                self._clamp_to_screen()
+            else:
+                # No saved frame yet (first launch) — position near the status button.
+                try:
+                    self._position_near_button(button)
+                except Exception:
+                    log.exception("popover: position failed, using fallback")
+                    self._position_fallback()
 
         # Activate the app so the panel accepts key events, then bring it front.
         NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
@@ -120,6 +136,28 @@ class Popover:
 
         log.info("popover: setting frame origin (%s, %s)", x, y)
         self._panel.setFrameOrigin_((x, y))
+
+    def _clamp_to_screen(self) -> None:
+        """If the restored frame's origin is off all current screens, reposition it."""
+        frame = self._panel.frame()
+        x, y = frame.origin.x, frame.origin.y
+        for screen in NSScreen.screens():
+            vis = screen.visibleFrame()
+            if (vis.origin.x <= x < vis.origin.x + vis.size.width
+                    and vis.origin.y <= y < vis.origin.y + vis.size.height):
+                return  # origin is on a connected screen — leave it
+        log.info("popover: saved frame origin (%s,%s) is off all screens, repositioning", x, y)
+        # Keep the saved size; only fix the position.
+        w = frame.size.width
+        h = frame.size.height
+        screen = NSScreen.mainScreen()
+        if screen is None:
+            return
+        vis = screen.visibleFrame()
+        self._panel.setFrameOrigin_((
+            vis.origin.x + vis.size.width - w - 10,
+            vis.origin.y + vis.size.height - h,
+        ))
 
     def _position_fallback(self) -> None:
         screen = NSScreen.mainScreen()
