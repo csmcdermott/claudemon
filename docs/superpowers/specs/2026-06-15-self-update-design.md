@@ -160,6 +160,36 @@ State 3 — in progress (after confirm click):
 
 `perform_update` is not unit-tested (requires live subprocess and filesystem).
 
+## Active Range Persistence
+
+### Overview
+
+When the user selects a named time range tab (12H, 7d, 30d, All), that selection is saved to `~/.claudemon/config.json` and restored the next time the dashboard opens. The Custom range is not persisted (its start/end dates are ephemeral and would be stale on next session).
+
+### Config key
+
+New key: **`active_range`** — one of `"today"`, `"7d"`, `"30d"`, `"all"`. Stored in `~/.claudemon/config.json` via the existing `POST /api/config` endpoint. Absent or invalid values default to `"7d"` on restore.
+
+Must be added to the `POST /api/config` allowlist when that security fix is implemented (currently deferred — see Known Issues in project-analysis.md).
+
+### server.py changes
+
+None beyond the allowlist addition. `GET /api/config` already returns the full config dict; `active_range` will appear in its response automatically once stored.
+
+### app.js changes
+
+**On tab click**: after activating a named range, call `api.post('/api/config', { active_range: currentRange })`. Do not call this for `"custom"` range clicks.
+
+**On first `refresh()` (inside `_stateRestored` block)**: read `cfg.active_range` from the `GET /api/config` response. If it's one of `["today", "7d", "30d", "all"]`, programmatically activate that tab (update `currentRange`, set the `active` CSS class, trigger a data refresh). If absent, invalid, or `"custom"`, leave the default `"7d"` tab active.
+
+This follows the exact same pattern as `applySectionOrder()` and `initCollapsibles()` — state is read once from config on the first refresh call, applied, and the `_stateRestored` flag prevents re-application on subsequent refreshes.
+
+### Testing
+
+No new server-side tests needed — `POST /api/config` and `GET /api/config` are already covered. The allowlist test (when written) must include `active_range`.
+
+JS behaviour (save on tab click, restore on load, custom not saved) is covered by manual QA — the project has no JS test infrastructure.
+
 ## Constraints
 
 - macOS only: `ditto` is macOS-native. `open -a` is macOS-only. This feature is already macOS-only (py2app bundle).
