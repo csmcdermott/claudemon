@@ -1,7 +1,9 @@
 import json
 import os
+import secrets
 import signal
 import sqlite3
+import sys
 import threading
 import time
 import urllib.error
@@ -17,6 +19,7 @@ from claudemon._version import __version__ as _APP_VERSION
 
 _usage_cache: dict = {"data": None, "fetched_at": None}
 _USAGE_LOCK = threading.Lock()
+_CSRF_TOKEN: str = secrets.token_hex(32)
 
 
 def _call_usage_api(token: str) -> dict:
@@ -116,7 +119,9 @@ def _make_handler(
             if parsed.path == "/":
                 index = dashboard_dir / "index.html"
                 try:
-                    body = index.read_bytes()
+                    body = index.read_bytes().replace(
+                        b"{{CSRF_TOKEN}}", _CSRF_TOKEN.encode()
+                    )
                 except OSError:
                     self._json_error(404, "dashboard not found")
                     return
@@ -189,6 +194,9 @@ def _make_handler(
                 self._json_error(500, str(exc))
 
         def do_POST(self):
+            if self.headers.get("X-CSRF-Token") != _CSRF_TOKEN:
+                self._json_error(403, "CSRF token mismatch")
+                return
             path = urlparse(self.path).path
             if path == "/api/quit":
                 self._json({"ok": True})

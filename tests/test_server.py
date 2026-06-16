@@ -47,7 +47,11 @@ def seeded_conn(conn):
 def server(seeded_conn, tmp_path):
     dashboard_dir = tmp_path / "dashboard"
     dashboard_dir.mkdir()
-    (dashboard_dir / "index.html").write_text("<html><body>dashboard</body></html>")
+    (dashboard_dir / "index.html").write_bytes(
+        b"<html><head>"
+        b"<meta name='csrf-token' content='{{CSRF_TOKEN}}'>"
+        b"</head><body>dashboard</body></html>"
+    )
     (dashboard_dir / "style.css").write_text("body { color: red; }")
     (dashboard_dir / "app.js").write_text("console.log('hi');")
     config_path = tmp_path / "config.json"
@@ -70,6 +74,19 @@ def server(seeded_conn, tmp_path):
 
 def _get(url: str) -> dict:
     with urllib.request.urlopen(url) as r:
+        return json.loads(r.read())
+
+
+def _post(url: str, data: bytes = b"", extra_headers: dict | None = None) -> dict:
+    """POST with the server's CSRF token. Raises HTTPError on non-2xx."""
+    headers = {
+        "Content-Type": "application/json",
+        "X-CSRF-Token": srv._CSRF_TOKEN,
+    }
+    if extra_headers:
+        headers.update(extra_headers)
+    req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+    with urllib.request.urlopen(req) as r:
         return json.loads(r.read())
 
 
@@ -129,16 +146,8 @@ def test_config_includes_version(server):
 
 def test_config_post(server):
     body = json.dumps({"weekly_output_budget": 5000000}).encode()
-    req = urllib.request.Request(
-        server + "/api/config",
-        data=body,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(req) as r:
-        result = json.loads(r.read())
+    result = _post(server + "/api/config", data=body)
     assert result["weekly_output_budget"] == 5000000
-    # Verify persisted
     data = _get(server + "/api/config")
     assert data["weekly_output_budget"] == 5000000
 
@@ -333,6 +342,37 @@ def test_static_403_for_path_traversal(server):
     assert exc_info.value.code == 403
 
 
+# ── CSRF tests ────────────────────────────────────────────────────────────────
+
+
+def test_index_html_injects_csrf_token(server):
+    with urllib.request.urlopen(server + "/") as r:
+        body = r.read().decode()
+    assert srv._CSRF_TOKEN in body
+    assert "{{CSRF_TOKEN}}" not in body
+
+
+def test_post_without_csrf_token_returns_403(server):
+    req = urllib.request.Request(
+        server + "/api/config", data=b"{}", method="POST"
+    )
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        urllib.request.urlopen(req)
+    assert exc.value.code == 403
+
+
+def test_post_with_wrong_csrf_token_returns_403(server):
+    req = urllib.request.Request(
+        server + "/api/config",
+        data=b"{}",
+        headers={"X-CSRF-Token": "wrong"},
+        method="POST",
+    )
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        urllib.request.urlopen(req)
+    assert exc.value.code == 403
+
+
 # ── /api/tools tests ─────────────────────────────────────────────────────────
 
 
@@ -356,7 +396,11 @@ def tools_seeded_conn(conn):
 def tools_server(tools_seeded_conn, tmp_path):
     dashboard_dir = tmp_path / "dashboard"
     dashboard_dir.mkdir()
-    (dashboard_dir / "index.html").write_text("<html><body>dashboard</body></html>")
+    (dashboard_dir / "index.html").write_bytes(
+        b"<html><head>"
+        b"<meta name='csrf-token' content='{{CSRF_TOKEN}}'>"
+        b"</head><body>dashboard</body></html>"
+    )
     (dashboard_dir / "style.css").write_text("body{}")
     (dashboard_dir / "app.js").write_text("// ok")
     config_path = tmp_path / "config.json"
@@ -409,12 +453,9 @@ def test_quit_endpoint_sends_sigterm(server):
         called["sig"] = sig
 
     with patch("os.kill", side_effect=fake_kill):
-        req = urllib.request.Request(server + "/api/quit", method="POST", data=b"")
-        with urllib.request.urlopen(req) as r:
-            result = json.loads(r.read())
+        result = _post(server + "/api/quit")
         assert result == {"ok": True}
 
-        # Wait inside the patch context for the daemon thread to fire.
         deadline = time.time() + 1.0
         while time.time() < deadline and "pid" not in called:
             time.sleep(0.01)
