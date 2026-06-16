@@ -890,14 +890,20 @@ async function refresh() {
     // Restore last selected named range
     const saved = config.active_range;
     const validRanges = ['today', '7d', '30d', 'all'];
+    let rangeRestored = false;
     if (saved && validRanges.includes(saved) && saved !== currentRange) {
       currentRange = saved;
       document.querySelectorAll('.tab').forEach(t => {
         t.classList.toggle('active', t.dataset.range === saved);
       });
+      rangeRestored = true;
     }
     fetchUpdateCheck();
     _stateRestored = true;
+    if (rangeRestored) {
+      refresh();  // re-fetch with the restored range; this call already used the wrong default
+      return;
+    }
   }
 
   setViewMode(currentRange);
