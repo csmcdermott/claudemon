@@ -772,19 +772,24 @@ function initUpdateBanner() {
   const actions = document.getElementById('update-actions');
   const progress = document.getElementById('update-progress');
 
-  // Dismiss (State 1 only) — stores version to suppress for this session
+  let inConfirmState = false;
+
   dismissBtn.addEventListener('click', () => {
+    if (inConfirmState) {
+      // State 2 Cancel — just reset to State 1
+      inConfirmState = false;
+      confirmBtn.textContent = 'Update now';
+      dismissBtn.textContent = '✕';
+      return;
+    }
+    // State 1 Dismiss — suppress for this session
     const msg = document.getElementById('update-msg').textContent;
-    // Extract version from "claudemon X.Y.Z is available"
     const match = msg.match(/claudemon (\S+) is available/);
     if (match) sessionStorage.setItem('update-dismissed', match[1]);
     document.getElementById('update-banner').classList.add('hidden');
-    // Reset for next time banner is shown
     confirmBtn.textContent = 'Update now';
     dismissBtn.textContent = '✕';
   });
-
-  let inConfirmState = false;
 
   confirmBtn.addEventListener('click', async () => {
     if (!inConfirmState) {
