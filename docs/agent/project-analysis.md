@@ -5,7 +5,7 @@
 | **Project name** | claudemon |
 | **Purpose** | macOS menu bar app to monitor Claude Code usage in real time — token counts, cache hit rates, query/task analytics, active session state |
 | **Target release** | v1.0 (personal use) |
-| **Last updated** | 2026-06-13 (v0.5.13: semver + just release workflow; GitHub releases with .app asset; docs updated) |
+| **Last updated** | 2026-06-16 (v0.6.5: self-update feature, CSRF protection, active range persistence, menu bar usage %, window frame persistence) |
 
 ## Tech Stack
 
@@ -77,6 +77,7 @@ claudemon/
 | Database | claudemon/db.py | Schema (sessions, messages, file_cursors) + query API |
 | HTTP server | claudemon/server.py | /api/stats, /api/timeline, /api/tasks, /api/sessions, /api/config, /api/usage |
 | Keychain | claudemon/keychain.py | Reads Claude Code OAuth token from macOS Keychain via `security` CLI |
+| Updater | claudemon/updater.py | GitHub release check (1h cache, `_UPDATE_LOCK`), version compare, `perform_update` (non-daemon thread, URL allowlist, `# pragma: no cover`) |
 
 ## Data Flow
 
@@ -103,8 +104,11 @@ GET  /api/queries?range=...&bucket=1h|1d           ← returns top-10 queries by
 GET  /api/sessions?range=...&limit=10&active=false
 GET  /api/usage                                    ← live rate-limit utilization from Anthropic OAuth API; 115s cache
 GET  /api/config
-POST /api/config
-POST /api/quit   → sends SIGTERM to process (used by dashboard Quit button)
+POST /api/config                                   ← requires X-CSRF-Token
+POST /api/quit   → sends SIGTERM to process        ← requires X-CSRF-Token
+GET  /api/update-check                             ← {available, version, bundle}; asset_url NEVER in response
+GET  /api/update-status                            ← {state: idle|running|failed, error}
+POST /api/update                                   ← requires X-CSRF-Token; sys.frozen check; non-daemon thread
 ```
 
 `range=day:MS` is a specific local calendar day (MS = local midnight UTC ms as returned by chart bucket data). Server computes end as `datetime.fromtimestamp(MS/1000) + timedelta(days=1)` (DST-safe).
@@ -128,9 +132,9 @@ Implementation plan: `docs/superpowers/plans/2026-06-07-claudemon.md`
 | 2026-06-09 | Testing — JS | `colorClass`, `fmtResetsAt`, `padBuckets`, `bucketLabel`, `viewBuckets` have zero automated tests. Three documented past JS bugs (locale time string, custom-picker toggle, IIFE duplication). Deferred: needs a runner decision (Node + jsdom? Bun? pytest+playwright?) and dev-dep approval before tooling is added. |
 | 2026-06-09 | Testing — DST | `_range_to_timestamps("day:...")` had a real DST bug (`day_start_ms + 86400000`) — fix is in place but no regression test. Deferred: portable TZ-manipulation in pytest is non-trivial; would need Mac/Linux-only test with `TZ=America/Los_Angeles` env override. |
 | 2026-06-09 | Testing — timeout | No `pytest-timeout` configured; a hung server thread would stall the suite indefinitely. Deferred per CLAUDE.md "Minimal Dependencies" rule — pending approval to add the dev-dep. |
-| 2026-06-09 | Security — CSRF | `/api/quit` and `/api/config` POST have no Origin check. Any localhost-accessible browser tab can kill the app or rewrite persistent config. Fix: validate `Origin` header against `http://127.0.0.1:<our-port>` (or empty for WKWebView). |
+| ~~2026-06-09~~ | ~~Security — CSRF~~ | **FIXED 2026-06-16**: All POST endpoints now require `X-CSRF-Token: <token>` where `_CSRF_TOKEN = secrets.token_hex(32)` is set at server module load and injected into `index.html` via `{{CSRF_TOKEN}}` placeholder. |
 | 2026-06-09 | Security — error leak | `server.py` `_json_error(500, str(exc))` echoes exception messages into responses, leaking file paths and internal types. Fix: log details server-side via `log.exception`, return a fixed `"internal error"` body. |
-| 2026-06-09 | Security — config POST | `/api/config` POST: (a) `int(Content-Length)` accepts negative values, allowing `rfile.read(-1)` to read until EOF; (b) any JSON keys are merged into persistent config — no allowlist. Fix: clamp length to ≤64 KiB; validate keys against `{weekly_output_budget, task_gap_minutes, server_port, section_collapse_state, section_order}`. (Updated 2026-06-13: allowlist must now include new dashboard UX keys.) |
+| 2026-06-09 | Security — config POST | `/api/config` POST: (a) `int(Content-Length)` accepts negative values, allowing `rfile.read(-1)` to read until EOF; (b) any JSON keys are merged into persistent config — no allowlist. Fix: clamp length to ≤64 KiB; validate keys against `{weekly_output_budget, task_gap_minutes, server_port, section_collapse_state, section_order, active_range}`. (Updated 2026-06-16: allowlist must include `active_range`.) |
 | 2026-06-09 | Security — input validation | `_range_to_timestamps("custom:...")` raises ValueError/IndexError on malformed input, caught only by the generic 500 handler. Fix: validate format and return 400. |
 | 2026-06-09 | Security — SRI | `dashboard/index.html:8` loads Chart.js from jsdelivr without Subresource Integrity. If the CDN is compromised, arbitrary JS runs in the WKWebView. Fix: add `integrity="sha384-..."` + `crossorigin="anonymous"`, or vendor `chart.js` into `dashboard/`. |
 | 2026-06-09 | Security — deps | Runtime deps in `pyproject.toml` are unpinned (`rumps>=0.4.0`, `watchdog>=4.0.0`, `pyobjc-framework-WebKit>=10.0`). A future bad release would be silently picked up. Fix: pin with `~=` or commit a lock file (`uv lock` / `pip-compile`). |
@@ -168,11 +172,28 @@ The pre-commit hook (`scripts/pre-commit.sh`) auto-bumps patch on every commit. 
 - **ThreadingHTTPServer (server.py)**: Handlers run in parallel threads so a slow `/api/usage` (10s upstream timeout) doesn't block the rest of the dashboard. Concurrency implications: (a) SQLite read functions don't hold `_LOCK` — safe for single-user in-memory DB; (b) `_usage_cache` writes are guarded by `_USAGE_LOCK`; (c) two simultaneous cache-miss requests may both hit Anthropic — benign, the cache catches up.
 - **`padBuckets(data, range, makeEmpty)` (app.js)**: Single gap-fill function for all three chart-data shapes. Each shape has a factory: `TIMELINE_EMPTY`, `TASKS_EMPTY`, `QUERIES_EMPTY` — functions returning a fresh empty stub (functions, not objects, so nested arrays like `tasks: []` aren't shared across buckets). When adding a new field to a chart-data response, update the corresponding `*_EMPTY` factory — that's the only place to keep in sync, replacing the per-function duplication that previously caused stub-drift bugs.
 - **Menu bar glyph**: `✱` in Claude orange (`_CLAUDE_COLOR` ≈ #D97757 in `statusitem.py`). Three places use it: `_apply_title` (button path), `_refresh_title` fallback (pre-button), `_pulse_loop` fallback, and `app.py` initial title. Keep them all in sync if changing again.
+- **CSRF token (2026-06-16)**: `_CSRF_TOKEN = secrets.token_hex(32)` at module load in `server.py`. `do_GET` for `/` replaces `{{CSRF_TOKEN}}` placeholder in `index.html` bytes before serving. `do_POST` checks `self.headers.get("X-CSRF-Token") != _CSRF_TOKEN` → 403 as its very first line, before any path routing. JS reads it via `document.querySelector('meta[name="csrf-token"]')?.content` and sends as `X-CSRF-Token` header on all fetch POSTs.
+- **updater.py (2026-06-16)**: `check_for_updates()` hits `https://api.github.com/repos/csmcdermott/claudemon/releases/latest` with 1h cache (`CACHE_TTL = 3_600`, `_UPDATE_LOCK`). `asset_url` is stored in cache internally but **never returned in any HTTP response** — it's only accessible via `get_update_asset_url()` used by `POST /api/update`. `get_update_state_for_response()` strips `asset_url` for HTTP responses. `perform_update` is `# pragma: no cover`, validates URL netloc against `_TRUSTED_HOSTS = {"github.com", "objects.githubusercontent.com"}`, uses `tempfile.TemporaryDirectory()` as context manager, `ditto` for extract and install, `shutil.rmtree` before SIGTERM. Runs in a **non-daemon thread** so it completes even if the main thread exits.
+- **Active range persistence (2026-06-16)**: Named tab clicks POST `{active_range: currentRange}` to `/api/config` (not custom tab — it has no `data-range` attribute, so the guard `if (!tab.dataset.range) return` fires). Restored in `_stateRestored` block. **Critical**: if the range changes on restore, `refresh()` is called again immediately and the current call `return`s early — otherwise the first refresh fetches data with the old default `'7d'` and charts show wrong data until the next poll (~30s).
+- **Window frame persistence (2026-06-16)**: `panel.setFrameAutosaveName_("claudemon.panel")` in `_ensure_panel`. NSWindow auto-saves to NSUserDefaults on every move/resize and on X-close. `toggle()` checks `NSUserDefaults.standardUserDefaults().stringForKey_("NSWindow Frame claudemon.panel")` on first show: if saved frame exists, calls `_clamp_to_screen()` (repositions if off all displays); if no saved frame, positions near button. `_frame_set = True` flag prevents re-positioning on subsequent shows within the same session.
+- **Status item usage % (2026-06-16)**: `StatusItem.__init__` now takes `port: int`. If port is set, starts a daemon thread that calls `_fetch_usage()` immediately then every 120s. `_fetch_usage()` calls `http://127.0.0.1:{port}/api/usage` (localhost, reuses server's 115s Anthropic cache). Sets `_usage_pct: float | None`. `_apply_title` builds `"✱ {pct}% / {tok} ●"` when pct is not None, falling back to `"✱ {tok} ●"`. Pct colored via `NSColor.system{Green,Yellow,Orange,Red}Color()` at thresholds `<50 / <80 / <95 / ≥95` matching the dashboard `colorClass()` function.
 
 ## Recently Changed Areas
 
 | Date | File / Area | What changed |
 | --- | --- | --- |
+| 2026-06-16 | v0.6.5 | Window frame persistence via `setFrameAutosaveName_("claudemon.panel")` in popover.py |
+| 2026-06-16 | claudemon/popover.py | Added `_frame_set` flag; `_clamp_to_screen()`; `NSUserDefaults` check to skip `_position_near_button` when frame was restored; added `NSUserDefaults` import |
+| 2026-06-16 | claudemon/statusitem.py | Added `port` param, `_usage_pct` field, `_usage_colors`, `_usage_color()`, `_start_usage_poll()`, `_fetch_usage()`, `_usage_poll_loop()`; `_apply_title` now renders `✱ {pct}% / {tok} ●` with colored pct segment |
+| 2026-06-16 | claudemon/app.py | Pass `port=self._port` to `StatusItem` constructor |
+| 2026-06-16 | dashboard/app.js | Active range restore: after updating `currentRange` in `_stateRestored`, call `refresh()` + `return` to avoid rendering stale data from first call (fix for ~30s stale chart bug) |
+| 2026-06-16 | claudemon/updater.py (new) | `_parse_version`, `check_for_updates` (1h cache), `get_update_asset_url`, `get_update_state_for_response`, `get_update_status`, `perform_update` (pragma: no cover) |
+| 2026-06-16 | tests/test_updater.py (new) | 17 tests; autouse `reset_updater` fixture; `_make_release_body`, `_mock_resp` helpers |
+| 2026-06-16 | claudemon/server.py | `_CSRF_TOKEN = secrets.token_hex(32)`; `{{CSRF_TOKEN}}` injection in GET /; CSRF check top of `do_POST`; `GET /api/update-check`, `GET /api/update-status`, `POST /api/update` routes; `import claudemon.updater as updater`, `import secrets`, `import sys` |
+| 2026-06-16 | claudemon/dashboard/index.html | `<meta name="csrf-token" content="{{CSRF_TOKEN}}">` in head; `#update-banner` element after `#banner` |
+| 2026-06-16 | claudemon/dashboard/style.css | `.update-banner`, `.update-btn`, `.update-dismiss`, `#update-actions`, `#update-progress` styles |
+| 2026-06-16 | claudemon/dashboard/app.js | `CSRF_TOKEN` const; `X-CSRF-Token` header on all POSTs; `fetchUpdateCheck`, `renderUpdateBanner`, `initUpdateBanner`, `pollUpdateStatus`; active range persistence (save on named tab click, restore in `_stateRestored`); `active_range` config POST with CSRF; re-`refresh()` + `return` when range restored |
+| 2026-06-16 | tests/test_server.py | `_post()` helper with CSRF; `reset_updater_cache` autouse fixture; CSRF tests; update-check/status/update route tests; existing POST tests updated to use `_post()` |
 | 2026-06-13 | v0.5.13 release | Grouped justfile recipes; added `just release` (build + zip with ditto + gh release create); GitHub release v0.5.13 published with .app asset; README updated with Download section + config table; CONTRIBUTORS.md updated with release workflow; TODO.md config allowlist corrected |
 | 2026-06-13 | v0.5.12 release | Sort skills/MCP by max_output_tokens; persist section collapse state + order to config; drag-to-reorder with HTML5 D&D |
 | 2026-06-13 | claudemon/db.py | `query_tool_usage`: sort key changed from `calls` to `max_output_tokens` for both skills and mcp |
