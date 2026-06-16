@@ -766,6 +766,81 @@ function renderUpdateBanner(data) {
   banner.classList.remove('hidden');
 }
 
+function initUpdateBanner() {
+  const confirmBtn = document.getElementById('update-confirm-btn');
+  const dismissBtn = document.getElementById('update-dismiss-btn');
+  const actions = document.getElementById('update-actions');
+  const progress = document.getElementById('update-progress');
+
+  // Dismiss (State 1 only) — stores version to suppress for this session
+  dismissBtn.addEventListener('click', () => {
+    const msg = document.getElementById('update-msg').textContent;
+    // Extract version from "claudemon X.Y.Z is available"
+    const match = msg.match(/claudemon (\S+) is available/);
+    if (match) sessionStorage.setItem('update-dismissed', match[1]);
+    document.getElementById('update-banner').classList.add('hidden');
+    // Reset for next time banner is shown
+    confirmBtn.textContent = 'Update now';
+    dismissBtn.textContent = '✕';
+  });
+
+  let inConfirmState = false;
+
+  confirmBtn.addEventListener('click', async () => {
+    if (!inConfirmState) {
+      // State 1 → State 2
+      inConfirmState = true;
+      confirmBtn.textContent = 'Confirm update';
+      dismissBtn.textContent = 'Cancel';
+      return;
+    }
+
+    // State 2 → State 3
+    inConfirmState = false;
+    actions.classList.add('hidden');
+    progress.classList.remove('hidden');
+    progress.textContent = 'Updating… app will restart shortly';
+
+    try {
+      await fetch('/api/update', {
+        method: 'POST',
+        headers: { 'X-CSRF-Token': CSRF_TOKEN },
+      });
+      pollUpdateStatus();
+    } catch (err) {
+      progress.textContent = 'Update request failed: ' + err.message;
+      actions.classList.remove('hidden');
+      progress.classList.add('hidden');
+      confirmBtn.textContent = 'Update now';
+      dismissBtn.textContent = '✕';
+    }
+  });
+}
+
+function pollUpdateStatus() {
+  const progress = document.getElementById('update-progress');
+  const actions = document.getElementById('update-actions');
+  const confirmBtn = document.getElementById('update-confirm-btn');
+  const dismissBtn = document.getElementById('update-dismiss-btn');
+
+  const interval = setInterval(async () => {
+    try {
+      const data = await fetch('/api/update-status').then(r => r.json());
+      if (data.state === 'failed') {
+        clearInterval(interval);
+        progress.textContent = 'Update failed: ' + (data.error || 'unknown error');
+        actions.classList.remove('hidden');
+        confirmBtn.textContent = 'Retry';
+        dismissBtn.textContent = '✕';
+      }
+      // If 'running' — keep polling. If app restarts, fetch will fail → clearInterval.
+    } catch (_) {
+      // Connection lost — app is restarting.
+      clearInterval(interval);
+    }
+  }, 2000);
+}
+
 function applySectionOrder(order) {
   if (!order || !order.length) return;
   const footer = document.querySelector('footer');
@@ -905,4 +980,6 @@ document.addEventListener('DOMContentLoaded', () => {
       headers: { 'X-CSRF-Token': CSRF_TOKEN },
     }).catch(() => {});
   });
+
+  initUpdateBanner();
 });
