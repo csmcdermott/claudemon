@@ -1,6 +1,7 @@
 import json
 import os
 import signal
+import sys as _sys
 import time
 import urllib.error
 import urllib.request
@@ -10,6 +11,7 @@ import pytest
 
 import claudemon.db as db
 import claudemon.server as srv
+import claudemon.updater as updater
 from claudemon.keychain import KeychainError
 from claudemon.server import _range_to_timestamps, start_server
 
@@ -201,6 +203,15 @@ _MOCK_API_RESPONSE = {
 def _reset_usage_cache():
     srv._usage_cache["data"] = None
     srv._usage_cache["fetched_at"] = None
+
+
+@pytest.fixture(autouse=True)
+def reset_updater_cache():
+    updater._update_cache["data"] = None
+    updater._update_cache["checked_at"] = None
+    updater._update_status["state"] = "idle"
+    updater._update_status["error"] = None
+    yield
 
 
 def test_usage_returns_data(server):
@@ -439,6 +450,38 @@ def test_tools_endpoint_with_data(tools_server):
     assert len(data["mcp"]) == 1
     assert data["mcp"][0]["name"] == "playwright"
     assert data["mcp"][0]["calls"] == 1
+
+
+# ── /api/update-check tests ───────────────────────────────────────────────────
+
+
+def test_update_check_shape(server):
+    data = _get(server + "/api/update-check")
+    assert "available" in data
+    assert "bundle" in data
+    assert "asset_url" not in data
+
+
+def test_update_check_bundle_flag_is_false_in_test(server):
+    data = _get(server + "/api/update-check")
+    assert data["bundle"] is False
+
+
+def test_update_check_bundle_flag_true_when_frozen(server):
+    with patch.object(_sys, "frozen", True, create=True):
+        data = _get(server + "/api/update-check")
+    assert data["bundle"] is True
+
+
+def test_update_check_no_asset_url_in_response(server):
+    updater._update_cache["data"] = {
+        "available": True, "version": "99.0.0",
+        "asset_url": "https://objects.githubusercontent.com/foo/bar.zip",
+    }
+    updater._update_cache["checked_at"] = time.time()
+    data = _get(server + "/api/update-check")
+    assert data["available"] is True
+    assert "asset_url" not in data
 
 
 # ── /api/quit test ───────────────────────────────────────────────────────────

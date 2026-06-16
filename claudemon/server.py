@@ -14,6 +14,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import claudemon.db as db
+import claudemon.updater as updater
 from claudemon import keychain
 from claudemon._version import __version__ as _APP_VERSION
 
@@ -186,6 +187,11 @@ def _make_handler(
 
                 elif parsed.path == "/api/tools":
                     self._json(db.query_tool_usage(conn, range_ts))
+
+                elif parsed.path == "/api/update-check":
+                    state = updater.check_for_updates()
+                    public = {k: v for k, v in state.items() if k != "asset_url"}
+                    self._json({**public, "bundle": bool(getattr(sys, "frozen", False))})
 
                 else:
                     self._json_error(404, "not found")
