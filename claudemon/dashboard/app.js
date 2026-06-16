@@ -879,6 +879,15 @@ async function refresh() {
         }
       });
     }
+    // Restore last selected named range
+    const saved = config.active_range;
+    const validRanges = ['today', '7d', '30d', 'all'];
+    if (saved && validRanges.includes(saved) && saved !== currentRange) {
+      currentRange = saved;
+      document.querySelectorAll('.tab').forEach(t => {
+        t.classList.toggle('active', t.dataset.range === saved);
+      });
+    }
     fetchUpdateCheck();
     _stateRestored = true;
   }
@@ -970,6 +979,15 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('custom-tab').textContent = 'Custom';
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
+      // Persist named range (not custom — its dates are ephemeral)
+      fetch('/api/config', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': CSRF_TOKEN,
+        },
+        body: JSON.stringify({ active_range: currentRange }),
+      }).catch(() => {});
       refresh();
     });
   });
