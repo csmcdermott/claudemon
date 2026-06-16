@@ -49,6 +49,8 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({
   '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;',
 }[c]));
 
+const CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]')?.content ?? '';
+
 function fmt(n) {
   if (n >= 1e9) return (n/1e9).toFixed(1)+'B';
   if (n >= 1e6) return (n/1e6).toFixed(1)+'M';
@@ -698,7 +700,10 @@ function saveCollapseState() {
   });
   fetch('/api/config', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': CSRF_TOKEN,
+    },
     body: JSON.stringify({ section_collapse_state: state }),
   });
 }
@@ -708,9 +713,57 @@ function saveSectionOrder() {
     .map(el => el.dataset.sectionId);
   fetch('/api/config', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': CSRF_TOKEN,
+    },
     body: JSON.stringify({ section_order: order }),
   });
+}
+
+async function fetchUpdateCheck() {
+  try {
+    const data = await fetch('/api/update-check').then(r => r.json());
+    renderUpdateBanner(data);
+  } catch (_) {
+    // silent fail — update check is best-effort
+  }
+}
+
+function renderUpdateBanner(data) {
+  const banner = document.getElementById('update-banner');
+  if (!data.available) {
+    banner.classList.add('hidden');
+    return;
+  }
+  const dismissed = sessionStorage.getItem('update-dismissed');
+  if (dismissed === data.version) {
+    banner.classList.add('hidden');
+    return;
+  }
+
+  document.getElementById('update-msg').textContent =
+    'claudemon ' + esc(data.version) + ' is available';
+
+  const confirmBtn = document.getElementById('update-confirm-btn');
+  const dismissBtn = document.getElementById('update-dismiss-btn');
+
+  if (data.bundle) {
+    confirmBtn.style.display = '';
+    confirmBtn.textContent = 'Update now';
+    dismissBtn.style.display = '';
+    dismissBtn.textContent = '✕';
+  } else {
+    confirmBtn.style.display = 'none';
+    dismissBtn.style.display = 'none';
+    const note = document.createElement('span');
+    note.textContent = 'Run just build && just install-app to update.';
+    note.style.color = 'var(--muted)';
+    note.style.fontSize = '12px';
+    document.getElementById('update-actions').appendChild(note);
+  }
+
+  banner.classList.remove('hidden');
 }
 
 function applySectionOrder(order) {
@@ -751,6 +804,7 @@ async function refresh() {
         }
       });
     }
+    fetchUpdateCheck();
     _stateRestored = true;
   }
 
@@ -846,6 +900,9 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   document.getElementById('quit-btn').addEventListener('click', () => {
-    fetch('/api/quit', { method: 'POST' }).catch(() => {});
+    fetch('/api/quit', {
+      method: 'POST',
+      headers: { 'X-CSRF-Token': CSRF_TOKEN },
+    }).catch(() => {});
   });
 });
