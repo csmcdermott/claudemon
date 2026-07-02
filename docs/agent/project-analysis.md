@@ -5,7 +5,7 @@
 | **Project name** | claudemon |
 | **Purpose** | macOS menu bar app to monitor Claude Code usage in real time — token counts, cache hit rates, query/task analytics, active session state |
 | **Target release** | v1.0 (personal use) |
-| **Last updated** | 2026-06-16 (v0.6.5: self-update feature, CSRF protection, active range persistence, menu bar usage %, window frame persistence) |
+| **Last updated** | 2026-07-02 (v0.7.9: dashboard hover improvements — query names from first prompt, richer chart tooltip date/time titles, whole-row skill/MCP hover tooltip) |
 
 ## Tech Stack
 
