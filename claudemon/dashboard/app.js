@@ -204,16 +204,47 @@ let _paddedTimeline = [];
 let _paddedTasks = [];
 let _paddedQueries = [];
 
+// All three charts share the same x-axis buckets, so any padded array resolves
+// an index → bucket timestamp.
+function bucketTsForIndex(idx) {
+  return _paddedTimeline[idx]?.date ?? _paddedTasks[idx]?.date ?? _paddedQueries[idx]?.date;
+}
+
 // Drill into a specific day when clicking a bar in a multi-day chart.
 function onChartClick(_event, elements) {
   if (!elements.length) return;
   // Only drill when already in a multi-day range, not when already in a day view.
   if (isHourBucket(currentRange)) return;
-  const idx = elements[0].index;
-  const ts = _paddedTimeline[idx]?.date ?? _paddedTasks[idx]?.date ?? _paddedQueries[idx]?.date;
+  const ts = bucketTsForIndex(elements[0].index);
   if (ts == null) return;
   currentRange = `day:${ts}`;
   refresh();
+}
+
+// Chart.js shows no tooltip when hovering x-axis tick labels — only over bars/
+// and it doesn't even fire onHover below the plot area. So use a native canvas
+// mousemove listener to reveal the full date/time when the cursor is in the
+// axis-label strip below the plot, without altering the bar/line tooltips.
+function attachAxisHover(chart) {
+  const canvas = chart.canvas;
+  const tip = document.getElementById('axis-tip');
+  if (!tip) return;
+  canvas.addEventListener('mousemove', e => {
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const ca = chart.chartArea;
+    if (y <= ca.bottom || x < ca.left || x > ca.right) { tip.style.display = 'none'; return; }
+    const idx = Math.min(Math.max(Math.round(chart.scales.x.getValueForPixel(x)), 0),
+                         chart.data.labels.length - 1);
+    const ts = bucketTsForIndex(idx);
+    if (ts == null) { tip.style.display = 'none'; return; }
+    tip.textContent = tooltipDateTitle(ts, currentRange);
+    tip.style.left = e.clientX + 'px';
+    tip.style.top = (e.clientY - 30) + 'px';
+    tip.style.display = 'block';
+  });
+  canvas.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
 }
 
 function initCharts() {
@@ -259,6 +290,10 @@ function initCharts() {
       },
     },
   });
+
+  attachAxisHover(tokenChart);
+  attachAxisHover(queryChart);
+  attachAxisHover(taskChart);
 }
 
 // ── Label helpers ────────────────────────────────────────────────────────────
@@ -269,13 +304,22 @@ function fmtHour(ts) {
   return `${h12}${h < 12 ? 'am' : 'pm'}`;
 }
 
+// Locale-independent "Jul 11". WKWebView's toLocaleDateString is unreliable in
+// some macOS locale configs (same bug as toLocaleTimeString — see lessons.md),
+// so format the month manually rather than via Intl.
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function fmtMonthDay(ts) {
+  const d = new Date(ts);
+  return `${MONTH_ABBR[d.getMonth()]} ${d.getDate()}`;
+}
+
 function bucketLabel(ts, range, prevTs = null) {
   if (isHourBucket(range)) {
     const timeStr = fmtHour(ts);
     // Show date prefix when crossing midnight into a new calendar day.
     if (prevTs !== null && new Date(prevTs).getDate() !== new Date(ts).getDate()) {
-      const d = new Date(ts);
-      return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + timeStr;
+      return fmtMonthDay(ts) + ' ' + timeStr;
     }
     return timeStr;
   }
@@ -283,7 +327,7 @@ function bucketLabel(ts, range, prevTs = null) {
 }
 
 function tooltipDateTitle(ts, range) {
-  const md = new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const md = fmtMonthDay(ts);
   return isHourBucket(range) ? `${fmtHour(ts)} · ${md}` : md;
 }
 

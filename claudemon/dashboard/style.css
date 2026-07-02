@@ -342,6 +342,22 @@ footer {
 }
 .tool-row:hover .tool-tip { visibility: visible; }
 
+/* Custom hover chip for x-axis date/time labels (Chart.js has none). */
+#axis-tip {
+  display: none;
+  position: fixed;
+  z-index: 100;
+  transform: translateX(-50%);
+  background: #1c1c28;
+  color: #ddd;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 4px;
+  padding: 3px 7px;
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 /* ── Drag-to-reorder ───────────────────────────────── */
 .drag-handle {
   color: #333;
