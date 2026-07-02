@@ -262,6 +262,20 @@ def test_query_tool_usage_p50_max(conn):
     assert skill["max_output_tokens"] == 2000
 
 
+def test_upsert_query_insert(conn):
+    db.upsert_query(conn, "s1", "s1:1:1", "fix the hover behaviors")
+    row = conn.execute("SELECT * FROM queries WHERE query_id='s1:1:1'").fetchone()
+    assert row["session_id"] == "s1"
+    assert row["text"] == "fix the hover behaviors"
+
+
+def test_upsert_query_ignores_replay(conn):
+    db.upsert_query(conn, "s1", "s1:1:1", "first prompt")
+    db.upsert_query(conn, "s1", "s1:1:1", "second prompt")
+    row = conn.execute("SELECT text FROM queries WHERE query_id='s1:1:1'").fetchone()
+    assert row["text"] == "first prompt"  # first write wins
+
+
 def test_query_tool_usage_sorted_by_max_tokens(conn):
     now = int(time.time() * 1000)
     db.upsert_session(conn, "s1", "proj", None, now - 5000, now, "main")

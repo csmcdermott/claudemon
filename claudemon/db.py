@@ -54,6 +54,12 @@ CREATE TABLE IF NOT EXISTS tool_uses (
     UNIQUE (session_id, query_id, timestamp, tool_type, tool_name)
 );
 CREATE INDEX IF NOT EXISTS idx_tool_uses_ts ON tool_uses(timestamp);
+
+CREATE TABLE IF NOT EXISTS queries (
+    query_id    TEXT PRIMARY KEY,
+    session_id  TEXT,
+    text        TEXT
+);
 """
 
 
@@ -123,6 +129,22 @@ def insert_tool_use(
                 (session_id, query_id, timestamp, tool_type, tool_name, output_tokens)
             VALUES (?, ?, ?, ?, ?, ?)
         """, (session_id, query_id, timestamp, tool_type, tool_name, output_tokens))
+        conn.commit()
+
+
+def upsert_query(
+    conn: sqlite3.Connection,
+    session_id: str,
+    query_id: str,
+    text: str,
+) -> None:
+    """Store the first-seen prompt text for a query. First write wins."""
+    with _LOCK:
+        conn.execute(
+            "INSERT OR IGNORE INTO queries (query_id, session_id, text)"
+            " VALUES (?, ?, ?)",
+            (query_id, session_id, text),
+        )
         conn.commit()
 
 
