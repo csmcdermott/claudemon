@@ -378,12 +378,14 @@ def query_query_breakdown(
 
     rows = conn.execute(f"""
         SELECT
-            {trunc}                               AS bucket_ts,
-            query_id,
-            SUM(input_tokens + output_tokens)     AS total_tokens
-        FROM messages
-        WHERE timestamp BETWEEN ? AND ?
-        GROUP BY bucket_ts, query_id
+            {trunc}                                   AS bucket_ts,
+            m.query_id                                AS query_id,
+            q.text                                    AS text,
+            SUM(m.input_tokens + m.output_tokens)     AS total_tokens
+        FROM messages m
+        LEFT JOIN queries q ON q.query_id = m.query_id
+        WHERE m.timestamp BETWEEN ? AND ?
+        GROUP BY bucket_ts, m.query_id
         ORDER BY bucket_ts, total_tokens DESC
     """, (start_ms, end_ms)).fetchall()
 
@@ -392,7 +394,11 @@ def query_query_breakdown(
         ts = r["bucket_ts"]
         if ts not in raw:
             raw[ts] = []
-        raw[ts].append({"query_id": r["query_id"], "total_tokens": r["total_tokens"]})
+        raw[ts].append({
+            "query_id": r["query_id"],
+            "text": r["text"],
+            "total_tokens": r["total_tokens"],
+        })
 
     result = []
     for ts in sorted(raw):
