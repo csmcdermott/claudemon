@@ -4,6 +4,8 @@ from pathlib import Path
 
 import claudemon.db as db
 
+_QUERY_TEXT_MAX = 60
+
 
 def _parse_timestamp(ts_str: str) -> int:
     """Convert ISO 8601 string to unix milliseconds."""
@@ -34,6 +36,22 @@ def _is_clear_command(record: dict) -> bool:
     else:
         return False
     return text.strip() == "/clear"
+
+
+def _extract_prompt_text(record: dict) -> str:
+    """First text content of a user message, whitespace-collapsed. '' if none."""
+    content = record.get("message", {}).get("content", [])
+    if isinstance(content, list):
+        text = " ".join(
+            c.get("text", "")
+            for c in content
+            if isinstance(c, dict) and c.get("type") == "text"
+        )
+    elif isinstance(content, str):
+        text = content
+    else:
+        return ""
+    return " ".join(text.split())
 
 
 def index_file(
@@ -140,6 +158,13 @@ def index_file(
 
                 short_id = session_id[:6]
                 current_query_id = f"{short_id}:{task_num}:{query_num}"
+
+                prompt_text = _extract_prompt_text(record)
+                if prompt_text:
+                    db.upsert_query(
+                        conn, session_id, current_query_id,
+                        prompt_text[:_QUERY_TEXT_MAX],
+                    )
 
                 last_branch = branch
                 if ts:
