@@ -1,6 +1,8 @@
 # tests/test_updater.py
 import json
+import subprocess
 import urllib.error
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -161,3 +163,75 @@ def test_get_update_state_for_response_empty_cache():
 
 def test_get_update_status_initial():
     assert updater.get_update_status() == {"state": "idle", "error": None}
+
+
+# --- _install_app ---
+
+def _make_bundle(path: Path, marker: str):
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "marker.txt").write_text(marker)
+
+
+def _fake_ditto(returncode: int = 0, stderr: str = "", make_dest: bool = True,
+                on_call=None):
+    def run(cmd, capture_output=False, text=False, **kw):
+        dest = Path(cmd[2])
+        if on_call is not None:
+            on_call(dest)
+        if returncode == 0 and make_dest:
+            _make_bundle(dest, "new")
+        return subprocess.CompletedProcess(cmd, returncode, stdout="", stderr=stderr)
+    return run
+
+
+def test_install_app_fresh_no_existing(tmp_path):
+    src = tmp_path / "src.app"
+    _make_bundle(src, "new")
+    dest = tmp_path / "dest.app"
+    with patch("claudemon.updater.subprocess.run", _fake_ditto()):
+        updater._install_app(src, dest)
+    assert (dest / "marker.txt").read_text() == "new"
+    assert not list(tmp_path.glob("dest.app.old-*"))
+
+
+def test_install_app_replaces_existing(tmp_path):
+    src = tmp_path / "src.app"
+    _make_bundle(src, "new")
+    dest = tmp_path / "dest.app"
+    _make_bundle(dest, "old")
+    with patch("claudemon.updater.subprocess.run", _fake_ditto()):
+        updater._install_app(src, dest)
+    assert (dest / "marker.txt").read_text() == "new"
+    assert not list(tmp_path.glob("dest.app.old-*"))
+
+
+def test_install_app_moves_old_aside_before_ditto(tmp_path):
+    # Prove the running bundle is renamed aside, not overwritten in place.
+    src = tmp_path / "src.app"
+    _make_bundle(src, "new")
+    dest = tmp_path / "dest.app"
+    _make_bundle(dest, "old")
+    seen = {}
+
+    def on_call(d):
+        seen["dest_exists"] = d.exists()
+        seen["backup_exists"] = bool(list(tmp_path.glob("dest.app.old-*")))
+
+    with patch("claudemon.updater.subprocess.run", _fake_ditto(on_call=on_call)):
+        updater._install_app(src, dest)
+    assert seen["dest_exists"] is False
+    assert seen["backup_exists"] is True
+
+
+def test_install_app_restores_on_ditto_failure(tmp_path):
+    src = tmp_path / "src.app"
+    _make_bundle(src, "new")
+    dest = tmp_path / "dest.app"
+    _make_bundle(dest, "old")
+    fake = _fake_ditto(returncode=1, stderr="Operation not permitted", make_dest=False)
+    with patch("claudemon.updater.subprocess.run", fake):
+        with pytest.raises(RuntimeError, match="Operation not permitted"):
+            updater._install_app(src, dest)
+    # original bundle restored, no partial dest, no leftover backup
+    assert (dest / "marker.txt").read_text() == "old"
+    assert not list(tmp_path.glob("dest.app.old-*"))

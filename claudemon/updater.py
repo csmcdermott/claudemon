@@ -117,6 +117,40 @@ def get_update_status() -> dict:
         return dict(_update_status)
 
 
+def _install_app(src: Path, dest: Path) -> None:
+    """Install the extracted bundle `src` to `dest`, replacing any existing app.
+
+    The existing bundle is renamed aside first rather than overwritten in place:
+    when claudemon updates itself it is running *from* `dest`, and macOS refuses
+    to overwrite the running (memory-mapped) executable — an in-place `ditto`
+    onto it fails with a bare "exit status 1". Renaming the old bundle keeps the
+    running process's files valid (same inode) while `ditto` writes a fresh
+    bundle. On failure the old bundle is restored.
+    """
+    backup = dest.with_name(dest.name + f".old-{os.getpid()}")
+    shutil.rmtree(backup, ignore_errors=True)
+    had_existing = dest.exists()
+    if had_existing:
+        os.rename(dest, backup)
+    try:
+        result = subprocess.run(
+            ["ditto", str(src), str(dest)],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"ditto install failed (exit {result.returncode}): "
+                f"{result.stderr.strip() or 'no output'}"
+            )
+    except Exception:
+        shutil.rmtree(dest, ignore_errors=True)
+        if had_existing:
+            os.rename(backup, dest)
+        raise
+    shutil.rmtree(backup, ignore_errors=True)
+
+
 def perform_update(asset_url: str) -> None:  # pragma: no cover
     """Download, extract, install update to /Applications/claudemon.app, relaunch, quit.
 
@@ -153,10 +187,7 @@ def perform_update(asset_url: str) -> None:  # pragma: no cover
                     f"Extracted bundle is not a real directory: {app_tmp}"
                 )
 
-            subprocess.run(
-                ["ditto", str(app_tmp), "/Applications/claudemon.app"],
-                check=True,
-            )
+            _install_app(app_tmp, Path("/Applications/claudemon.app"))
 
             # Explicit cleanup before SIGTERM — TemporaryDirectory.__exit__
             # won't run after os.kill terminates the process.
