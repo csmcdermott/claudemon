@@ -302,6 +302,7 @@ footer {
   align-items: center;
   gap: 6px;
   margin-bottom: 6px;
+  position: relative;
 }
 .tool-name {
   font-size: 13px;
@@ -324,6 +325,22 @@ footer {
 .tool-meta { font-size: 12px; color: #777; white-space: nowrap; }
 .skill-fill { background: #4ade80; }
 .mcp-fill   { background: #38bdf8; }
+.tool-tip {
+  visibility: hidden;
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  z-index: 10;
+  background: #1c1c28;
+  color: #ddd;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 4px;
+  padding: 3px 7px;
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.tool-row:hover .tool-tip { visibility: visible; }
 
 /* ── Drag-to-reorder ───────────────────────────────── */
 .drag-handle {

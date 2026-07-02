@@ -676,9 +676,10 @@ function renderSkills(skills) {
   el.innerHTML = skills.map(s => {
     const pct = Math.round(s.max_output_tokens / maxTok * 100);
     return `<div class="tool-row">
-      <div class="tool-name" title="${esc(s.name)}">${esc(s.name)}</div>
+      <div class="tool-name">${esc(s.name)}</div>
       <div class="tool-bar-wrap"><div class="tool-fill skill-fill" style="width:${pct}%"></div></div>
       <div class="tool-meta">×${s.calls} · ${fmt(s.p50_output_tokens)} 50% / ${fmt(s.max_output_tokens)} max</div>
+      <span class="tool-tip">${esc(s.name)}</span>
     </div>`;
   }).join('');
 }
@@ -693,9 +694,10 @@ function renderMcp(mcp) {
   el.innerHTML = mcp.map(m => {
     const pct = Math.round(m.max_output_tokens / maxTok * 100);
     return `<div class="tool-row">
-      <div class="tool-name" title="${esc(m.name)}">${esc(m.name)}</div>
+      <div class="tool-name">${esc(m.name)}</div>
       <div class="tool-bar-wrap"><div class="tool-fill mcp-fill" style="width:${pct}%"></div></div>
       <div class="tool-meta">×${m.calls} · ${fmt(m.p50_output_tokens)} 50% / ${fmt(m.max_output_tokens)} max</div>
+      <span class="tool-tip">${esc(m.name)}</span>
     </div>`;
   }).join('');
 }
