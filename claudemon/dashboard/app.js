@@ -447,7 +447,9 @@ function renderQueryChart(queriesData, range) {
       }
       const b = padded[item.dataIndex];
       const q = b.queries?.[item.dataset.queryIndex];
-      return ` ${q?.query_id ?? item.dataset.label}: ${fmt(item.raw)} tokens`;
+      const name = q?.text || q?.query_id || item.dataset.label;
+      const shown = name.length > 50 ? name.slice(0, 49) + '…' : name;
+      return ` ${shown}: ${fmt(item.raw)} tokens`;
     },
   };
 
