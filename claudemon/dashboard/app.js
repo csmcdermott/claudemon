@@ -282,6 +282,11 @@ function bucketLabel(ts, range, prevTs = null) {
   return String(new Date(ts).getDate());
 }
 
+function tooltipDateTitle(ts, range) {
+  const md = new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return isHourBucket(range) ? `${fmtHour(ts)} · ${md}` : md;
+}
+
 // ── Gap filling ──────────────────────────────────────────────────────────────
 
 function viewBuckets(range) {
@@ -405,6 +410,9 @@ function renderTokenChart(timeline, range) {
       borderColor: '#34d399', borderWidth: 1.5, pointRadius: 2.5, pointBackgroundColor: '#34d399',
       spanGaps: true, tension: 0.4, yAxisID: 'yRight', order: 1 },
   ];
+  tokenChart.options.plugins.tooltip.callbacks = {
+    title: items => tooltipDateTitle(padded[items[0].dataIndex].date, range),
+  };
   tokenChart.update();
 }
 
@@ -437,7 +445,7 @@ function renderQueryChart(queriesData, range) {
   };
 
   queryChart.options.plugins.tooltip.callbacks = {
-    title: items => items[0].label,
+    title: items => tooltipDateTitle(padded[items[0].dataIndex].date, range),
     label: item => {
       if (item.dataset.label === 'p50 tok') return ` p50: ${fmt(item.raw)}`;
       if (item.dataset.label === 'top tok') return ` max: ${fmt(item.raw)}`;
@@ -497,7 +505,7 @@ function renderTaskChart(tasksData, range) {
   }));
 
   taskChart.options.plugins.tooltip.callbacks = {
-    title: items => items[0].label,
+    title: items => tooltipDateTitle(padded[items[0].dataIndex].date, range),
     label: item => {
       if (item.dataset.label === 'p50 tok') return ` p50: ${fmt(item.raw)}`;
       if (item.dataset.label === 'top tok') return ` max: ${fmt(item.raw)}`;
