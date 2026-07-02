@@ -39,7 +39,7 @@ def _is_clear_command(record: dict) -> bool:
 
 
 def _extract_prompt_text(record: dict) -> str:
-    """First text content of a user message, whitespace-collapsed. '' if none."""
+    """All text content of a user message, joined and whitespace-collapsed. '' if none."""
     content = record.get("message", {}).get("content", [])
     if isinstance(content, list):
         text = " ".join(
