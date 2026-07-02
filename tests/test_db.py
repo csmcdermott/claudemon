@@ -262,6 +262,35 @@ def test_query_tool_usage_p50_max(conn):
     assert skill["max_output_tokens"] == 2000
 
 
+def test_upsert_query_insert(conn):
+    db.upsert_query(conn, "s1", "s1:1:1", "fix the hover behaviors")
+    row = conn.execute("SELECT * FROM queries WHERE query_id='s1:1:1'").fetchone()
+    assert row["session_id"] == "s1"
+    assert row["text"] == "fix the hover behaviors"
+
+
+def test_upsert_query_ignores_replay(conn):
+    db.upsert_query(conn, "s1", "s1:1:1", "first prompt")
+    db.upsert_query(conn, "s1", "s1:1:1", "second prompt")
+    row = conn.execute("SELECT text FROM queries WHERE query_id='s1:1:1'").fetchone()
+    assert row["text"] == "first prompt"  # first write wins
+
+
+def test_query_query_breakdown_includes_text(conn):
+    db.upsert_session(conn, "s1", "proj", None, 0, 99_000_000_000, "main")
+    ts_base = 1749340800000
+    db.insert_message(conn, "s1", "s1:1", "s1:1:1", ts_base, "claude-sonnet-4-6", 0, 50, 0, 0)
+    db.insert_message(
+        conn, "s1", "s1:1", "s1:1:2", ts_base + 1000, "claude-sonnet-4-6", 0, 80, 0, 0
+    )
+    db.upsert_query(conn, "s1", "s1:1:1", "named query")
+    # s1:1:2 has no stored text
+    result = db.query_query_breakdown(conn, (ts_base, ts_base + 10_000))
+    by_id = {q["query_id"]: q for q in result[0]["queries"]}
+    assert by_id["s1:1:1"]["text"] == "named query"
+    assert by_id["s1:1:2"]["text"] is None
+
+
 def test_query_tool_usage_sorted_by_max_tokens(conn):
     now = int(time.time() * 1000)
     db.upsert_session(conn, "s1", "proj", None, now - 5000, now, "main")

@@ -54,6 +54,12 @@ CREATE TABLE IF NOT EXISTS tool_uses (
     UNIQUE (session_id, query_id, timestamp, tool_type, tool_name)
 );
 CREATE INDEX IF NOT EXISTS idx_tool_uses_ts ON tool_uses(timestamp);
+
+CREATE TABLE IF NOT EXISTS queries (
+    query_id    TEXT PRIMARY KEY,
+    session_id  TEXT,
+    text        TEXT
+);
 """
 
 
@@ -123,6 +129,22 @@ def insert_tool_use(
                 (session_id, query_id, timestamp, tool_type, tool_name, output_tokens)
             VALUES (?, ?, ?, ?, ?, ?)
         """, (session_id, query_id, timestamp, tool_type, tool_name, output_tokens))
+        conn.commit()
+
+
+def upsert_query(
+    conn: sqlite3.Connection,
+    session_id: str,
+    query_id: str,
+    text: str,
+) -> None:
+    """Store the first-seen prompt text for a query. First write wins."""
+    with _LOCK:
+        conn.execute(
+            "INSERT OR IGNORE INTO queries (query_id, session_id, text)"
+            " VALUES (?, ?, ?)",
+            (query_id, session_id, text),
+        )
         conn.commit()
 
 
@@ -356,12 +378,14 @@ def query_query_breakdown(
 
     rows = conn.execute(f"""
         SELECT
-            {trunc}                               AS bucket_ts,
-            query_id,
-            SUM(input_tokens + output_tokens)     AS total_tokens
-        FROM messages
-        WHERE timestamp BETWEEN ? AND ?
-        GROUP BY bucket_ts, query_id
+            {trunc}                                   AS bucket_ts,
+            m.query_id                                AS query_id,
+            q.text                                    AS text,
+            SUM(m.input_tokens + m.output_tokens)     AS total_tokens
+        FROM messages m
+        LEFT JOIN queries q ON q.query_id = m.query_id
+        WHERE m.timestamp BETWEEN ? AND ?
+        GROUP BY bucket_ts, m.query_id
         ORDER BY bucket_ts, total_tokens DESC
     """, (start_ms, end_ms)).fetchall()
 
@@ -370,7 +394,11 @@ def query_query_breakdown(
         ts = r["bucket_ts"]
         if ts not in raw:
             raw[ts] = []
-        raw[ts].append({"query_id": r["query_id"], "total_tokens": r["total_tokens"]})
+        raw[ts].append({
+            "query_id": r["query_id"],
+            "text": r["text"],
+            "total_tokens": r["total_tokens"],
+        })
 
     result = []
     for ts in sorted(raw):

@@ -344,3 +344,54 @@ def test_index_file_no_tool_use_in_text_only_content(conn, tmp_path):
         "SELECT COUNT(*) FROM tool_uses WHERE session_id='t4'"
     ).fetchone()[0]
     assert count == 0
+
+
+def test_extract_prompt_text_list_content():
+    rec = {"message": {"content": [
+        {"type": "text", "text": "  fix  the   hover\n behaviors "},
+    ]}}
+    assert indexer._extract_prompt_text(rec) == "fix the hover behaviors"
+
+
+def test_extract_prompt_text_string_content():
+    rec = {"message": {"content": "just a string prompt"}}
+    assert indexer._extract_prompt_text(rec) == "just a string prompt"
+
+
+def test_extract_prompt_text_none():
+    rec = {"message": {"content": [{"type": "tool_result", "content": "x"}]}}
+    assert indexer._extract_prompt_text(rec) == ""
+
+
+def test_index_file_stores_query_text(conn):
+    indexer.index_file(conn, FIXTURE_JSONL, task_gap_minutes=30)
+    row = conn.execute(
+        "SELECT text FROM queries WHERE query_id='abc123:1:1'"
+    ).fetchone()
+    assert row["text"] == "Hello"
+
+
+def test_index_file_truncates_query_text(conn, tmp_path):
+    long_prompt = "x" * 200
+    line = {
+        "type": "user",
+        "message": {"role": "user", "content": [{"type": "text", "text": long_prompt}]},
+        "timestamp": "2026-06-01T10:00:00.000Z",
+        "sessionId": "longsess", "uuid": "u1", "parentUuid": None,
+        "cwd": "/Users/test/test-project", "gitBranch": "main",
+        "isSidechain": False, "isMeta": False,
+    }
+    assistant = {
+        "type": "assistant",
+        "message": {"model": "claude-sonnet-4-6", "usage": {"output_tokens": 10}},
+        "timestamp": "2026-06-01T10:00:01.000Z", "sessionId": "longsess",
+        "uuid": "a1", "cwd": "/Users/test/test-project", "gitBranch": "main",
+    }
+    import json
+    f = tmp_path / "longsess.jsonl"
+    f.write_text(json.dumps(line) + "\n" + json.dumps(assistant) + "\n")
+    indexer.index_file(conn, f, task_gap_minutes=30)
+    row = conn.execute(
+        "SELECT text FROM queries WHERE query_id='longse:1:1'"
+    ).fetchone()
+    assert row["text"] == "x" * 60

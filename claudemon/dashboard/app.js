@@ -282,6 +282,11 @@ function bucketLabel(ts, range, prevTs = null) {
   return String(new Date(ts).getDate());
 }
 
+function tooltipDateTitle(ts, range) {
+  const md = new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return isHourBucket(range) ? `${fmtHour(ts)} · ${md}` : md;
+}
+
 // ── Gap filling ──────────────────────────────────────────────────────────────
 
 function viewBuckets(range) {
@@ -405,6 +410,9 @@ function renderTokenChart(timeline, range) {
       borderColor: '#34d399', borderWidth: 1.5, pointRadius: 2.5, pointBackgroundColor: '#34d399',
       spanGaps: true, tension: 0.4, yAxisID: 'yRight', order: 1 },
   ];
+  tokenChart.options.plugins.tooltip.callbacks = {
+    title: items => tooltipDateTitle(padded[items[0].dataIndex].date, range),
+  };
   tokenChart.update();
 }
 
@@ -437,7 +445,7 @@ function renderQueryChart(queriesData, range) {
   };
 
   queryChart.options.plugins.tooltip.callbacks = {
-    title: items => items[0].label,
+    title: items => tooltipDateTitle(padded[items[0].dataIndex].date, range),
     label: item => {
       if (item.dataset.label === 'p50 tok') return ` p50: ${fmt(item.raw)}`;
       if (item.dataset.label === 'top tok') return ` max: ${fmt(item.raw)}`;
@@ -447,7 +455,9 @@ function renderQueryChart(queriesData, range) {
       }
       const b = padded[item.dataIndex];
       const q = b.queries?.[item.dataset.queryIndex];
-      return ` ${q?.query_id ?? item.dataset.label}: ${fmt(item.raw)} tokens`;
+      const name = q?.text || q?.query_id || item.dataset.label;
+      const shown = name.length > 50 ? name.slice(0, 49) + '…' : name;
+      return ` ${shown}: ${fmt(item.raw)} tokens`;
     },
   };
 
@@ -495,7 +505,7 @@ function renderTaskChart(tasksData, range) {
   }));
 
   taskChart.options.plugins.tooltip.callbacks = {
-    title: items => items[0].label,
+    title: items => tooltipDateTitle(padded[items[0].dataIndex].date, range),
     label: item => {
       if (item.dataset.label === 'p50 tok') return ` p50: ${fmt(item.raw)}`;
       if (item.dataset.label === 'top tok') return ` max: ${fmt(item.raw)}`;
@@ -666,9 +676,10 @@ function renderSkills(skills) {
   el.innerHTML = skills.map(s => {
     const pct = Math.round(s.max_output_tokens / maxTok * 100);
     return `<div class="tool-row">
-      <div class="tool-name" title="${esc(s.name)}">${esc(s.name)}</div>
+      <div class="tool-name">${esc(s.name)}</div>
       <div class="tool-bar-wrap"><div class="tool-fill skill-fill" style="width:${pct}%"></div></div>
       <div class="tool-meta">×${s.calls} · ${fmt(s.p50_output_tokens)} 50% / ${fmt(s.max_output_tokens)} max</div>
+      <span class="tool-tip">${esc(s.name)}</span>
     </div>`;
   }).join('');
 }
@@ -683,9 +694,10 @@ function renderMcp(mcp) {
   el.innerHTML = mcp.map(m => {
     const pct = Math.round(m.max_output_tokens / maxTok * 100);
     return `<div class="tool-row">
-      <div class="tool-name" title="${esc(m.name)}">${esc(m.name)}</div>
+      <div class="tool-name">${esc(m.name)}</div>
       <div class="tool-bar-wrap"><div class="tool-fill mcp-fill" style="width:${pct}%"></div></div>
       <div class="tool-meta">×${m.calls} · ${fmt(m.p50_output_tokens)} 50% / ${fmt(m.max_output_tokens)} max</div>
+      <span class="tool-tip">${esc(m.name)}</span>
     </div>`;
   }).join('');
 }
