@@ -43,7 +43,7 @@ branch change, or a session boundary.
 ## Requirements
 
 - macOS 13+
-- Python 3.11+
+- Python 3.11–3.13 (Python 3.14 is not yet supported — the `py2app` bundler used by `just build` does not support 3.14 yet; see [py2app#553](https://github.com/ronaldoussoren/py2app/pull/553))
 - [just](https://github.com/casey/just) (task runner)
 
 ## Download
